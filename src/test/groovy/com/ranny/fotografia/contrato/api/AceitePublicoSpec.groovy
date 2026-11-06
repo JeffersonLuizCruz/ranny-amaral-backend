@@ -1,6 +1,7 @@
 package com.ranny.fotografia.contrato.api
 
 import com.ranny.fotografia.agenda.repository.AgendamentoRepository
+import com.ranny.fotografia.arquivo.storage.FakeObjectStorage
 import com.ranny.fotografia.cliente.model.ClienteOrigem
 import com.ranny.fotografia.cliente.repository.ClienteRepository
 import com.ranny.fotografia.contrato.model.ModeloContrato
@@ -65,6 +66,9 @@ class AceitePublicoSpec extends Specification {
 
     @Autowired
     AgendamentoRepository agendamentoRepository
+
+    @Autowired
+    FakeObjectStorage storage
 
     ModeloContrato modelo
     Pacote pacote
@@ -146,31 +150,130 @@ class AceitePublicoSpec extends Specification {
         clienteRepository.findById(json.contrato.clienteId as String).get().origem == ClienteOrigem.CONTRATO
     }
 
-    def "aceite com comprovante deixa a entrada pendente de confirmacao"() {
+    def "inicia e conclui upload de comprovante apos o aceite"() {
         given:
         def contrato = criarContratoSemCliente()
         def link = gerarLink(contrato.id)
-        def corpo = [
-                nomeCompleto : "Juliana Prado",
-                tipoDocumento: "rg",
-                documento    : "12.345.678-9",
-                cidade       : "São Paulo",
-                comprovante  : [arquivoKey: "comprovantes/1.pdf", nomeArquivo: "1.pdf",
-                                mimeType: "application/pdf", tamanho: 2048]
-        ]
+        aceitar(link.token)
+        storage.simular(2048, "application/pdf", "%PDF-1.7\nconteudo".bytes)
 
         when:
-        def resultado = mockMvc.perform(post("/api/v1/public/contratos/${link.token}/aceite")
+        def inicio = mockMvc.perform(post("/api/v1/public/contratos/${link.token}/comprovante/upload")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(JsonCorpo.json(corpo)))
+                .content(JsonCorpo.json([
+                        nomeArquivo  : "2.pdf",
+                        mimeType     : "application/pdf",
+                        tamanho      : 2048,
+                        checksumSha256: "a" * 64
+                ])))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath('$.estrategia').value("PUT"))
+                .andReturn()
+
+        def arquivoId = JsonCorpo.mapa(inicio).arquivoId
+        def resultado = mockMvc.perform(post("/api/v1/public/contratos/${link.token}/comprovante/upload/${arquivoId}/complete")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([partes: []])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.contrato.pagamento.arquivoId').value(arquivoId))
                 .andExpect(jsonPath('$.contrato.statusPagamento').value("pendente"))
-                .andExpect(jsonPath('$.contrato.pagamento.comprovante.arquivoKey').value("comprovantes/1.pdf"))
                 .andReturn()
 
         then:
         def json = JsonCorpo.mapa(resultado)
+        json.contrato.pagamento.comprovante.arquivoKey.contains(arquivoId)
         json.contrato.historico.find { it.tipo == "comprovante_enviado" }
+
+        when:
+        def url = mockMvc.perform(get("/api/v1/contratos/${contrato.id}/pagamento/comprovante/url"))
+                .andExpect(status().isOk())
+                .andReturn()
+
+        then:
+        JsonCorpo.mapa(url).url.startsWith("http://fake-storage/")
+    }
+
+    def "inicia upload multipart para arquivo acima do limiar"() {
+        given:
+        def contrato = criarContratoSemCliente()
+        def link = gerarLink(contrato.id)
+        aceitar(link.token)
+        storage.simular(6 * 1024 * 1024, "image/jpeg", [(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 0, 0, 0, 0, 0] as byte[])
+
+        when:
+        def inicio = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/public/contratos/${link.token}/comprovante/upload")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        nomeArquivo  : "comprovante.jpg",
+                        mimeType     : "image/jpeg",
+                        tamanho      : 6 * 1024 * 1024,
+                        checksumSha256: "b" * 64
+                ])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.estrategia').value("MULTIPART"))
+                .andReturn())
+
+        then:
+        inicio.partes.size() == 1
+        inicio.partes[0].partNumber == 1
+    }
+
+    @Unroll
+    def "rejeita inicio de upload quando #descricao"() {
+        given:
+        def contrato = criarContratoSemCliente()
+        def link = gerarLink(contrato.id)
+        aceitar(link.token)
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/public/contratos/${link.token}/comprovante/upload")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        nomeArquivo  : "arquivo",
+                        mimeType     : mime,
+                        tamanho      : tamanho,
+                        checksumSha256: checksum
+                ])))
+                .andReturn()
+
+        then:
+        resultado.response.status == status
+        JsonCorpo.mapa(resultado).codigo == codigo
+
+        where:
+        descricao              | mime              | tamanho              | checksum | status | codigo
+        "o tipo nao e aceito"  | "text/plain"      | 1024                 | "a" * 64 | 422    | "ARQUIVO_TIPO_INVALIDO"
+        "o arquivo esta vazio" | "application/pdf" | 0                    | "a" * 64 | 400    | "ARQUIVO_VAZIO"
+        "o arquivo e grande"   | "application/pdf" | 10 * 1024 * 1024 + 1 | "a" * 64 | 413    | "ARQUIVO_MUITO_GRANDE"
+        "o checksum e invalido"| "application/pdf" | 1024                 | "xyz"    | 422    | "CHECKSUM_INVALIDO"
+    }
+
+    def "rejeita conteudo que nao corresponde ao tipo declarado"() {
+        given:
+        def contrato = criarContratoSemCliente()
+        def link = gerarLink(contrato.id)
+        aceitar(link.token)
+        storage.simular(2048, "application/pdf", "<html>malicioso</html>".bytes)
+
+        when:
+        def inicio = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/public/contratos/${link.token}/comprovante/upload")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        nomeArquivo  : "2.pdf",
+                        mimeType     : "application/pdf",
+                        tamanho      : 2048,
+                        checksumSha256: "c" * 64
+                ])))
+                .andReturn())
+
+        def resultado = mockMvc.perform(post("/api/v1/public/contratos/${link.token}/comprovante/upload/${inicio.arquivoId}/complete")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([partes: []])))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "ARQUIVO_TIPO_INVALIDO"
     }
 
     def "impede reutilizar um link ja aceito"() {
@@ -188,25 +291,6 @@ class AceitePublicoSpec extends Specification {
         then:
         resultado.response.status == 409
         JsonCorpo.mapa(resultado).codigo == "LINK_JA_ACEITO"
-    }
-
-    def "registra comprovante enviado apos o aceite"() {
-        given:
-        def contrato = criarContratoSemCliente()
-        def link = gerarLink(contrato.id)
-        aceitar(link.token)
-
-        when:
-        def resultado = mockMvc.perform(post("/api/v1/public/contratos/${link.token}/comprovante")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(JsonCorpo.json([arquivoKey: "comprovantes/2.pdf", nomeArquivo: "2.pdf",
-                                         mimeType: "application/pdf", tamanho: 1024])))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath('$.contrato.pagamento.comprovante.arquivoKey').value("comprovantes/2.pdf"))
-                .andReturn()
-
-        then:
-        JsonCorpo.mapa(resultado).contrato.historico.find { it.tipo == "comprovante_enviado" }
     }
 
     def "link expirado responde 410 e marca contrato como expirado"() {

@@ -41,6 +41,13 @@ public class PagamentoEntrada {
     @Column(name = "entrada_comprovante", columnDefinition = "TEXT")
     private ComprovantePagamento comprovante;
 
+    /**
+     * Referencia ao arquivo generico no object storage. O JSON de comprovante
+     * continua como snapshot de exibicao/legado.
+     */
+    @Column(name = "entrada_arquivo_id", length = 64)
+    private String arquivoId;
+
     @Convert(converter = RejeicaoComprovanteConverter.class)
     @Column(name = "entrada_rejeicao", columnDefinition = "TEXT")
     private RejeicaoComprovante rejeicao;
@@ -94,6 +101,12 @@ public class PagamentoEntrada {
 
     /** Registra o comprovante enviado e reabre a analise. */
     public void registrarComprovante(ComprovantePagamento comprovante) {
+        registrarComprovante(null, comprovante);
+    }
+
+    /** Registra o comprovante e o arquivo generico associado. */
+    public void registrarComprovante(String arquivoId, ComprovantePagamento comprovante) {
+        this.arquivoId = arquivoId;
         this.comprovante = comprovante;
         this.rejeicao = null;
         this.status = PagamentoStatus.PENDENTE;
@@ -120,6 +133,7 @@ public class PagamentoEntrada {
     public void isentar() {
         this.status = PagamentoStatus.ISENTO;
         this.comprovante = null;
+        this.arquivoId = null;
         this.rejeicao = null;
         this.confirmadoEm = null;
         this.confirmadoPor = null;

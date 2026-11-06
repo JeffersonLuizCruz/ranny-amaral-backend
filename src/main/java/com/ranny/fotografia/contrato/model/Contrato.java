@@ -339,11 +339,15 @@ public class Contrato {
     // ------------------------------------------------------------------
 
     public void registrarComprovante(ComprovantePagamento comprovante) {
+        registrarComprovante(null, comprovante);
+    }
+
+    public void registrarComprovante(String arquivoId, ComprovantePagamento comprovante) {
         if (statusAceite == StatusAceite.CANCELADO) {
             throw new RegraDeNegocioException("CONTRATO_CANCELADO",
                     "Contrato cancelado nao aceita comprovante.");
         }
-        pagamento.registrarComprovante(comprovante);
+        pagamento.registrarComprovante(arquivoId, comprovante);
         statusPagamento = pagamento.getStatus();
         adicionarHistorico(ContratoEventoTipo.COMPROVANTE_ENVIADO,
                 "Comprovante de pagamento enviado.", comprovante.enviadoEm());

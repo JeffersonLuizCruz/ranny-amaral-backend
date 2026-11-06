@@ -30,15 +30,18 @@ class PostgresSchemaIT {
                   and table_name in (
                     'clientes', 'pacotes', 'pacote_itens', 'agendamentos',
                     'contratos', 'solicitacoes_aceite', 'modelos_contrato',
-                    'estudio', 'event_publication', 'event_publication_archive'
+                    'estudio', 'arquivos', 'galerias', 'midias_galeria',
+                    'midia_derivados', 'links_galeria', 'selecoes_galeria',
+                    'selecao_itens', 'pedidos_extras', 'downloads_galeria',
+                    'eventos_galeria', 'event_publication', 'event_publication_archive'
                   )
                 """, Integer.class);
-        assertThat(tabelas).isEqualTo(10);
+        assertThat(tabelas).isEqualTo(20);
 
         Integer migracoes = jdbcTemplate.queryForObject(
                 "select count(*) from flyway_schema_history where success = true",
                 Integer.class);
-        assertThat(migracoes).isGreaterThanOrEqualTo(2);
+        assertThat(migracoes).isGreaterThanOrEqualTo(4);
     }
 
     @Test
@@ -47,8 +50,8 @@ class PostgresSchemaIT {
                 select count(*) from information_schema.columns
                 where table_schema = 'public'
                   and table_name = 'contratos'
-                  and column_name in ('cliente_nome', 'pacote_nome')
+                  and column_name in ('cliente_nome', 'pacote_nome', 'entrada_arquivo_id')
                 """, Integer.class);
-        assertThat(colunas).isEqualTo(2);
+        assertThat(colunas).isEqualTo(3);
     }
 }

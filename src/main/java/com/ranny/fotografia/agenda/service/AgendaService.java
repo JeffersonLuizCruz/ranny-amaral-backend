@@ -378,6 +378,8 @@ public class AgendaService implements AgendamentoConsulta {
                 agendamento.getValorEntrada(),
                 agendamento.getPercentualEntrada(),
                 agendamento.getSaldoRestante(),
+                agendamento.getPagamentoEntrada() == null ? null : agendamento.getPagamentoEntrada().getStatus(),
+                agendamento.getPagamentoFinal() == null ? null : agendamento.getPagamentoFinal().getStatus(),
                 condicoes == null ? null : new ResumoAgendamento.CondicoesResumo(
                         condicoes.getQuantidadeFotosInclusas(),
                         condicoes.getQuantidadeVideosInclusos(),

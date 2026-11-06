@@ -1,5 +1,8 @@
 package com.ranny.fotografia.contrato.service;
 
+import com.ranny.fotografia.arquivo.ArquivoFinalidade;
+import com.ranny.fotografia.arquivo.ArquivoStatus;
+import com.ranny.fotografia.arquivo.ArquivoUpload;
 import com.ranny.fotografia.cliente.ClienteConsulta;
 import com.ranny.fotografia.cliente.ClienteResumo;
 import com.ranny.fotografia.cliente.ContatoCliente;
@@ -16,6 +19,7 @@ import com.ranny.fotografia.contrato.repository.SolicitacaoAceiteRepository;
 import com.ranny.fotografia.shared.exception.ConflitoException;
 import com.ranny.fotografia.shared.exception.RecursoExpiradoException;
 import com.ranny.fotografia.shared.exception.RecursoNaoEncontradoException;
+import com.ranny.fotografia.shared.model.ComprovantePagamento;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +31,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.HexFormat;
+import java.util.List;
 
 /**
  * Casos de uso publicos do aceite.
@@ -49,17 +54,20 @@ public class AceitePublicoService {
     private final ClienteConsulta clienteConsulta;
     private final ContratoNumerador numerador;
     private final ApplicationEventPublisher eventos;
+    private final ArquivoUpload arquivoUpload;
 
     public AceitePublicoService(SolicitacaoAceiteRepository solicitacaoRepository,
                                 ContratoRepository contratoRepository,
                                 ClienteConsulta clienteConsulta,
                                 ContratoNumerador numerador,
-                                ApplicationEventPublisher eventos) {
+                                ApplicationEventPublisher eventos,
+                                ArquivoUpload arquivoUpload) {
         this.solicitacaoRepository = solicitacaoRepository;
         this.contratoRepository = contratoRepository;
         this.clienteConsulta = clienteConsulta;
         this.numerador = numerador;
         this.eventos = eventos;
+        this.arquivoUpload = arquivoUpload;
     }
 
     @Transactional(noRollbackFor = RecursoExpiradoException.class)
@@ -127,29 +135,88 @@ public class AceitePublicoService {
         contrato.registrarAceite(dados, cliente.id(), solicitacao.getId());
         solicitacao.aceitar(dados);
 
-        if (request.comprovante() != null) {
-            contrato.registrarComprovante(request.comprovante().paraModelo());
-        }
-
         publicar(contrato);
         return new AceitePublicoDtos.AceiteResponse(
                 protocolo, ContratoResponse.de(contrato), SolicitacaoAceiteResponse.de(solicitacao));
     }
 
     @Transactional(noRollbackFor = RecursoExpiradoException.class)
-    public AceitePublicoDtos.ComprovanteResponse enviarComprovante(
-            String token, AceitePublicoDtos.ComprovanteRequest request) {
+    public AceitePublicoDtos.UploadSessaoResponse iniciarUploadComprovante(
+            String token, AceitePublicoDtos.IniciarUploadRequest request) {
+        ContextoPublico contexto = contextoDisponivel(token);
+        Contrato contrato = contexto.contrato();
+        ArquivoUpload.IniciarUpload comando = new ArquivoUpload.IniciarUpload(
+                ArquivoFinalidade.COMPROVANTE_PAGAMENTO,
+                contrato.getId(),
+                "estudio/contratos/%s/comprovantes".formatted(contrato.getId()),
+                request.nomeArquivo(),
+                request.mimeType(),
+                request.tamanho(),
+                request.checksumSha256(),
+                arquivoUpload.tamanhoMaximo(ArquivoFinalidade.COMPROVANTE_PAGAMENTO));
+        return AceitePublicoDtos.UploadSessaoResponse.de(arquivoUpload.iniciar(comando));
+    }
+
+    @Transactional(noRollbackFor = RecursoExpiradoException.class)
+    public AceitePublicoDtos.ComprovanteResponse concluirUploadComprovante(
+            String token, String arquivoId, AceitePublicoDtos.ConcluirUploadRequest request) {
+        ContextoPublico contexto = contextoDisponivel(token);
+        Contrato contrato = contexto.contrato();
+        List<ArquivoUpload.ParteEnviada> partes = request.partes().stream()
+                .map(parte -> new ArquivoUpload.ParteEnviada(parte.partNumber(), parte.etag()))
+                .toList();
+
+        ArquivoUpload.ArquivoResumo arquivo = arquivoUpload.concluir(
+                arquivoId, ArquivoFinalidade.COMPROVANTE_PAGAMENTO, contrato.getId(), partes);
+
+        ComprovantePagamento comprovante = new ComprovantePagamento(
+                arquivo.objectKey(),
+                arquivo.nomeOriginal(),
+                arquivo.mimeType(),
+                arquivo.tamanhoBytes(),
+                arquivo.concluidoEm() == null ? Instant.now() : arquivo.concluidoEm());
+        contrato.registrarComprovante(arquivo.id(), comprovante);
+        publicar(contrato);
+        return new AceitePublicoDtos.ComprovanteResponse(
+                ContratoResponse.de(contrato),
+                SolicitacaoAceiteResponse.de(contexto.solicitacao()));
+    }
+
+    @Transactional(noRollbackFor = RecursoExpiradoException.class)
+    public void abortarUploadComprovante(String token, String arquivoId) {
+        ContextoPublico contexto = contextoDisponivel(token);
+        arquivoUpload.abortar(arquivoId, ArquivoFinalidade.COMPROVANTE_PAGAMENTO,
+                contexto.contrato().getId());
+    }
+
+    @Transactional(noRollbackFor = RecursoExpiradoException.class)
+    public AceitePublicoDtos.UploadStatusResponse statusUploadComprovante(String token, String arquivoId) {
+        ContextoPublico contexto = contextoLeitura(token);
+        ArquivoUpload.ArquivoResumo arquivo = arquivoUpload.buscar(
+                        arquivoId, ArquivoFinalidade.COMPROVANTE_PAGAMENTO,
+                        contexto.contrato().getId())
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Arquivo", arquivoId));
+        return new AceitePublicoDtos.UploadStatusResponse(
+                arquivo.id(), arquivo.status().name(), arquivo.status() == ArquivoStatus.DISPONIVEL);
+    }
+
+    private ContextoPublico contextoDisponivel(String token) {
+        ContextoPublico contexto = contextoLeitura(token);
+        validarDisponibilidade(contexto.solicitacao());
+        if (contexto.contrato().getStatusAceite() == StatusAceite.CANCELADO) {
+            throw new RecursoExpiradoException("CONTRATO_CANCELADO", "Este contrato foi cancelado.");
+        }
+        return contexto;
+    }
+
+    private ContextoPublico contextoLeitura(String token) {
         SolicitacaoAceite solicitacao = porToken(token);
         Contrato contrato = contratoDa(solicitacao);
         validarExpiracao(solicitacao, contrato);
-        validarDisponibilidade(solicitacao);
-        if (contrato.getStatusAceite() == StatusAceite.CANCELADO) {
-            throw new RecursoExpiradoException("CONTRATO_CANCELADO", "Este contrato foi cancelado.");
-        }
-        contrato.registrarComprovante(request.paraModelo());
-        publicar(contrato);
-        return new AceitePublicoDtos.ComprovanteResponse(
-                ContratoResponse.de(contrato), SolicitacaoAceiteResponse.de(solicitacao));
+        return new ContextoPublico(solicitacao, contrato);
+    }
+
+    private record ContextoPublico(SolicitacaoAceite solicitacao, Contrato contrato) {
     }
 
     private SolicitacaoAceite porToken(String token) {

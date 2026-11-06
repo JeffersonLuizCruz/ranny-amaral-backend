@@ -120,6 +120,12 @@ public class ContratoController {
         return contratoService.cancelar(id);
     }
 
+    @GetMapping("/{id}/pagamento/comprovante/url")
+    @Operation(summary = "Gera URL temporaria para o staff visualizar o comprovante")
+    public ComprovanteDownloadResponse urlComprovante(@PathVariable String id) {
+        return contratoService.urlComprovante(id);
+    }
+
     @PostMapping("/{id}/pagamento/confirmar")
     @Operation(summary = "Confirma a entrada do contrato")
     public ContratoResponse confirmarPagamento(

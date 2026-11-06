@@ -1,23 +1,22 @@
 package com.ranny.fotografia.contrato.api;
 
-import com.ranny.fotografia.shared.model.ComprovantePagamento;
+import com.ranny.fotografia.arquivo.ArquivoUpload;
 import com.ranny.fotografia.shared.model.TipoDocumento;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
- * DTOs das rotas publicas de aceite.
+ * DTOs das rotas publicas de aceite e upload de comprovante.
  *
- * <p>PATTERN: DTO / Form Object + Factory Method ({@code paraModelo}).
+ * <p>PATTERN: DTO / Form Object.
  *
- * <p>O comprovante enviado pelo cliente vira um value object do dominio; o
- * arquivo em si sera tratado pelo modulo de storage na proxima fase. O contrato
- * guarda apenas a referencia e os metadados.
+ * <p>O arquivo e enviado em duas fases (iniciar e concluir) direto ao object
+ * storage. O aceite do contrato continua sendo um JSON independente.
  */
 public final class AceitePublicoDtos {
 
@@ -41,30 +40,71 @@ public final class AceitePublicoDtos {
             String cidade,
 
             @Size(max = 30, message = "deve ter no maximo 30 caracteres")
-            String whatsapp,
-
-            @Valid
-            ComprovanteRequest comprovante
+            String whatsapp
     ) {
     }
 
-    public record ComprovanteRequest(
+    public record IniciarUploadRequest(
             @NotBlank(message = "nao pode ser vazio")
-            String arquivoKey,
-
-            @NotBlank(message = "nao pode ser vazio")
+            @Size(max = 255, message = "deve ter no maximo 255 caracteres")
             String nomeArquivo,
 
             @NotBlank(message = "nao pode ser vazio")
+            @Size(max = 120, message = "deve ter no maximo 120 caracteres")
             String mimeType,
 
-            @PositiveOrZero(message = "deve ser maior ou igual a zero")
-            long tamanho
+            long tamanho,
+
+            @NotBlank(message = "nao pode ser vazio")
+            String checksumSha256
+    ) {
+    }
+
+    public record ConcluirUploadRequest(
+            @NotNull(message = "nao pode ser nulo")
+            List<ParteEnviadaRequest> partes
+    ) {
+    }
+
+    public record ParteEnviadaRequest(
+            @Positive(message = "deve ser maior que zero")
+            int partNumber,
+
+            @NotBlank(message = "nao pode ser vazio")
+            String etag
+    ) {
+    }
+
+    public record UploadSessaoResponse(
+            String arquivoId,
+            String uploadId,
+            boolean reutilizado,
+            String estrategia,
+            long tamanho,
+            int partSize,
+            List<ParteUrlResponse> partes,
+            Instant expiraEm
     ) {
 
-        public ComprovantePagamento paraModelo() {
-            return new ComprovantePagamento(arquivoKey, nomeArquivo, mimeType, tamanho, Instant.now());
+        public static UploadSessaoResponse de(ArquivoUpload.SessaoUpload sessao) {
+            return new UploadSessaoResponse(
+                    sessao.arquivoId(),
+                    sessao.uploadId(),
+                    sessao.reutilizado(),
+                    sessao.estrategia().name(),
+                    sessao.tamanhoBytes(),
+                    sessao.partSizeBytes(),
+                    sessao.partes().stream()
+                            .map(parte -> new ParteUrlResponse(parte.partNumber(), parte.url()))
+                            .toList(),
+                    sessao.expiraEm());
         }
+    }
+
+    public record ParteUrlResponse(int partNumber, String url) {
+    }
+
+    public record UploadStatusResponse(String arquivoId, String status, boolean disponivel) {
     }
 
     public record AceiteResponse(

@@ -52,12 +52,36 @@ public class AceitePublicoController {
         return aceiteService.aceitar(token, request, ip(http), userAgent(http));
     }
 
-    @PostMapping("/{token}/comprovante")
-    @Operation(summary = "Registra o envio de comprovante de entrada")
-    public AceitePublicoDtos.ComprovanteResponse enviarComprovante(
+    @PostMapping("/{token}/comprovante/upload")
+    @Operation(summary = "Inicia o upload direto do comprovante ao object storage")
+    public AceitePublicoDtos.UploadSessaoResponse iniciarUpload(
             @PathVariable String token,
-            @Valid @RequestBody AceitePublicoDtos.ComprovanteRequest request) {
-        return aceiteService.enviarComprovante(token, request);
+            @Valid @RequestBody AceitePublicoDtos.IniciarUploadRequest request) {
+        return aceiteService.iniciarUploadComprovante(token, request);
+    }
+
+    @PostMapping("/{token}/comprovante/upload/{arquivoId}/complete")
+    @Operation(summary = "Conclui o upload e vincula o comprovante ao contrato")
+    public AceitePublicoDtos.ComprovanteResponse concluirUpload(
+            @PathVariable String token,
+            @PathVariable String arquivoId,
+            @Valid @RequestBody AceitePublicoDtos.ConcluirUploadRequest request) {
+        return aceiteService.concluirUploadComprovante(token, arquivoId, request);
+    }
+
+    @PostMapping("/{token}/comprovante/upload/{arquivoId}/abort")
+    @Operation(summary = "Aborta um upload de comprovante em andamento")
+    public ResponseEntity<Void> abortarUpload(@PathVariable String token,
+                                              @PathVariable String arquivoId) {
+        aceiteService.abortarUploadComprovante(token, arquivoId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{token}/comprovante/upload/{arquivoId}/status")
+    @Operation(summary = "Consulta o status do upload do comprovante")
+    public AceitePublicoDtos.UploadStatusResponse statusUpload(@PathVariable String token,
+                                                               @PathVariable String arquivoId) {
+        return aceiteService.statusUploadComprovante(token, arquivoId);
     }
 
     private static String ip(HttpServletRequest request) {

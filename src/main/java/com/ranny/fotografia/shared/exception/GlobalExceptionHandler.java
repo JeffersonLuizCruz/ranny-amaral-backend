@@ -1,5 +1,6 @@
 package com.ranny.fotografia.shared.exception;
 
+import com.ranny.fotografia.shared.exception.ArmazenamentoException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -108,6 +109,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.de(HttpStatus.CONFLICT, "CONFLITO_DE_DADOS",
                         "A operacao conflita com dados existentes.", request.getRequestURI(), null));
+    }
+
+    @ExceptionHandler(ArmazenamentoException.class)
+    public ResponseEntity<ErrorResponse> tratarArmazenamento(
+            ArmazenamentoException ex, HttpServletRequest request) {
+        log.error("Falha de armazenamento em {}: {}", request.getRequestURI(), ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.de(HttpStatus.INTERNAL_SERVER_ERROR, "ARMAZENAMENTO_INDISPONIVEL",
+                        "Nao foi possivel processar o arquivo no armazenamento.", request.getRequestURI(), null));
     }
 
     @ExceptionHandler(Exception.class)

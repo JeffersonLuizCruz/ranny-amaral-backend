@@ -1,6 +1,7 @@
 package com.ranny.fotografia.agenda;
 
 import com.ranny.fotografia.agenda.model.StatusAgendamento;
+import com.ranny.fotografia.shared.model.PagamentoStatus;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -33,8 +34,14 @@ public interface AgendamentoConsulta {
             BigDecimal valorEntrada,
             BigDecimal percentualEntrada,
             BigDecimal saldoRestante,
+            PagamentoStatus entradaStatus,
+            PagamentoStatus finalStatus,
             CondicoesResumo condicoes
     ) {
+
+        public boolean realizado() {
+            return status == StatusAgendamento.REALIZADO;
+        }
 
         public record ContatoResumo(String nome, String whatsapp) {
         }

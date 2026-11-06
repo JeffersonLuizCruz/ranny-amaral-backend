@@ -1,0 +1,18 @@
+package com.ranny.fotografia.galeria.model;
+
+public enum EventoGaleriaTipo {
+    CRIADA,
+    MIDIA_ENVIADA,
+    MIDIA_REMOVIDA,
+    SELECAO_PUBLICADA,
+    SELECAO_REABERTA,
+    SELECAO_ENVIADA,
+    EXTRAS_CONFIRMADOS,
+    EXTRAS_ISENTOS,
+    EDICAO_INICIADA,
+    PRONTA_ENTREGA,
+    ENTREGA_PUBLICADA,
+    ENTREGA_REVOGADA,
+    DOWNLOAD_REGISTRADO,
+    CANCELADA
+}

@@ -1,8 +1,11 @@
 package com.ranny.fotografia.contrato.service;
 
 import com.ranny.fotografia.agenda.AgendamentoConsulta;
+import com.ranny.fotografia.arquivo.ArquivoFinalidade;
+import com.ranny.fotografia.arquivo.ArquivoUpload;
 import com.ranny.fotografia.contrato.api.ContratoRequest;
 import com.ranny.fotografia.contrato.api.ContratoResponse;
+import com.ranny.fotografia.contrato.api.ComprovanteDownloadResponse;
 import com.ranny.fotografia.contrato.api.LinkAceiteRequest;
 import com.ranny.fotografia.contrato.api.PagamentoContratoRequests;
 import com.ranny.fotografia.contrato.api.SolicitacaoAceiteResponse;
@@ -67,6 +70,7 @@ public class ContratoService {
     private final PacoteConsulta pacoteConsulta;
     private final AgendamentoConsulta agendamentoConsulta;
     private final ApplicationEventPublisher eventos;
+    private final ArquivoUpload arquivoUpload;
 
     public ContratoService(ContratoRepository contratoRepository,
                            SolicitacaoAceiteRepository solicitacaoRepository,
@@ -77,7 +81,8 @@ public class ContratoService {
                            ContratoNumerador numerador,
                            PacoteConsulta pacoteConsulta,
                            AgendamentoConsulta agendamentoConsulta,
-                           ApplicationEventPublisher eventos) {
+                           ApplicationEventPublisher eventos,
+                           ArquivoUpload arquivoUpload) {
         this.contratoRepository = contratoRepository;
         this.solicitacaoRepository = solicitacaoRepository;
         this.modeloService = modeloService;
@@ -88,6 +93,7 @@ public class ContratoService {
         this.pacoteConsulta = pacoteConsulta;
         this.agendamentoConsulta = agendamentoConsulta;
         this.eventos = eventos;
+        this.arquivoUpload = arquivoUpload;
     }
 
     @Transactional(readOnly = true)
@@ -286,6 +292,20 @@ public class ContratoService {
         contrato.reabrirPagamentoFinal();
         publicar(contrato);
         return ContratoResponse.de(contrato);
+    }
+
+    @Transactional(readOnly = true)
+    public ComprovanteDownloadResponse urlComprovante(String id) {
+        Contrato contrato = obter(id);
+        String arquivoId = contrato.getPagamento() == null
+                ? null
+                : contrato.getPagamento().getArquivoId();
+        if (arquivoId == null || arquivoId.isBlank()) {
+            throw new RecursoNaoEncontradoException("Comprovante", id);
+        }
+        ArquivoUpload.UrlDownload download = arquivoUpload.urlDownload(
+                arquivoId, ArquivoFinalidade.COMPROVANTE_PAGAMENTO, contrato.getId());
+        return new ComprovanteDownloadResponse(download.url(), download.expiraEm());
     }
 
     // ------------------------------------------------------------------
