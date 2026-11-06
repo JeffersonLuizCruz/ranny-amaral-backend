@@ -5,6 +5,7 @@ import com.ranny.fotografia.shared.model.PagamentoStatus;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -17,6 +18,8 @@ import java.util.Optional;
 public interface AgendamentoConsulta {
 
     Optional<ResumoAgendamento> buscar(String agendamentoId);
+
+    List<ResumoAgendamento> listarPorPeriodo(OffsetDateTime inicio, OffsetDateTime fim);
 
     /** Resumo imutavel consumido por outros modulos. */
     record ResumoAgendamento(
@@ -41,6 +44,14 @@ public interface AgendamentoConsulta {
 
         public boolean realizado() {
             return status == StatusAgendamento.REALIZADO;
+        }
+
+        public boolean cancelado() {
+            return status == StatusAgendamento.CANCELADO;
+        }
+
+        public String statusValor() {
+            return status == null ? null : status.getValor();
         }
 
         public record ContatoResumo(String nome, String whatsapp) {

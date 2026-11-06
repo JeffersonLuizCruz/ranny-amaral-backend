@@ -56,6 +56,28 @@ class GaleriaControllerSpec extends Specification {
     @Autowired
     MidiaGaleriaRepository midiaRepository
 
+    def "nao publica selecao de ensaio nao realizado"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository, "Cliente Nao Realizado")
+        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), StatusAgendamento.RESERVADO)
+
+        def galeria = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/galerias")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([agendamentoId: agendamento.id])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/galerias/${galeria.id}/selecao/publicar"))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "ENSAIO_NAO_REALIZADO"
+    }
+
     def "fluxo completo de galeria: upload, selecao e entrega"() {
         given:
         def cliente = Cenario.cliente(clienteRepository, "Marina Galeria")

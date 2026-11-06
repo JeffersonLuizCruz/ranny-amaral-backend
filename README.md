@@ -2,7 +2,7 @@
 
 API REST do CRM de estúdio fotográfico, construída com **Java 25**, **Spring Boot 4.1.2**, **Spring Modulith 2.1.1**, **Spring Data JPA**, **PostgreSQL 16** e **Flyway**.
 
-O núcleo cobre **clientes, pacotes, agenda, contratos e galerias** (incluindo modelos, configuração do estúdio, aceite público, paginação/busca e upload de mídia). Financeiro e autenticação ficam para as próximas fases.
+O núcleo cobre **clientes, pacotes, agenda, contratos, galerias e financeiro** (incluindo modelos, configuração do estúdio, aceite público, paginação/busca e upload de mídia). Autenticação fica para a próxima fase.
 
 ## Requisitos
 
@@ -48,6 +48,9 @@ A suíte cobre:
 - CRUD e validações de clientes, pacotes e agenda;
 - paginação, ordenação estável, busca textual e validação de parâmetros;
 - upload de comprovante com validação de tipo/tamanho, multipart e MinIO real (quando `MINIO_TEST_ENDPOINT` está definido);
+- upload de fotos/vídeos, derivados, seleção, extras e entrega de galerias;
+- financeiro mensal com precedência de contrato, extras e exclusões;
+- migração incremental `V1 → V4` com backfill de dados existentes (`PostgresMigrationIT`);
 - congelamento das condições comerciais do pacote;
 - numeração de contratos (`CT-AAAA-0001`) e protocolos de aceite (`ACE-AAAA-0001`);
 - ciclo de vida do link público (geração, visualização, aceite, expiração e cancelamento);
@@ -171,6 +174,16 @@ Em VPS, use `APP_STORAGE_ENDPOINT=http://minio:9000` e `APP_STORAGE_PUBLIC_ENDPO
   - entrega exige extras pagos ou isentos.
 - Rotas administrativas e públicas estão em `/api/v1/galerias` e `/api/v1/public/galerias`.
 
+## Financeiro
+
+- `GET /api/v1/financeiro/mensal?mes=YYYY-MM` retorna o resumo consolidado e as entradas do mês.
+- Competência pelo início do ensaio no fuso `America/Sao_Paulo`.
+- Contrato vinculado tem prioridade sobre os valores do agendamento.
+- Extras vêm do pedido de extras da galeria.
+- Agendamentos cancelados e extras cancelados/isentos não inflam o previsto.
+- O backend calcula totais, recebidos, a receber, ticket médio e percentual recebido.
+- A tela não recalcula valores localmente.
+
 ## Endpoints principais
 
 | Recurso | Rotas |
@@ -185,11 +198,12 @@ Em VPS, use `APP_STORAGE_ENDPOINT=http://minio:9000` e `APP_STORAGE_PUBLIC_ENDPO
 | Seleção e extras | `POST /{id}/selecao/publicar`, `POST /{id}/selecao/reabrir`, `POST /{id}/extras/confirmar`, `POST /{id}/extras/isentar`, `POST /{id}/edicao/iniciar`, `POST /{id}/edicao/liberar` |
 | Entrega | `POST /{id}/pronta-entrega`, `POST /{id}/entrega/publicar`, `POST /{id}/entrega/revogar` |
 | Galeria pública | `GET /api/v1/public/galerias/{token}`, `POST .../selecao`, `POST .../download` |
+| Financeiro | `GET /api/v1/financeiro/mensal?mes=YYYY-MM` |
 | Modelos e estúdio | `/api/v1/modelos-contrato`, `/api/v1/estudio` |
 | Aceite público | `GET/POST /api/v1/public/contratos/{token}`, `POST .../visualizar`, `POST .../aceite`, `POST .../comprovante` |
 
 ## Próximas fases
 
-1. **Financeiro consolidado**.
-2. **Autenticação/JWT** e perfis de acesso.
-3. **Endurecimento de galerias**: processamento assíncrono, upload de versões editadas, poster/transcode de vídeos e ZIP de entrega.
+1. **Autenticação/JWT** e perfis de acesso.
+2. **Endurecimento**: processamento assíncrono de mídia, upload de versões editadas, poster/transcode de vídeos e ZIP de entrega.
+3. **Relatórios financeiros** adicionais (exportação, fluxo de caixa e conciliação).

@@ -301,6 +301,16 @@ public class AgendaService implements AgendamentoConsulta {
         return agendamentoRepository.findById(agendamentoId).map(AgendaService::paraResumo);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<ResumoAgendamento> listarPorPeriodo(OffsetDateTime inicio, OffsetDateTime fim) {
+        return agendamentoRepository
+                .findByDataHoraInicioBetweenOrderByDataHoraInicioAsc(inicio, fim)
+                .stream()
+                .map(AgendaService::paraResumo)
+                .toList();
+    }
+
     private Agendamento obter(String id) {
         return agendamentoRepository.findById(id)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Agendamento", id));

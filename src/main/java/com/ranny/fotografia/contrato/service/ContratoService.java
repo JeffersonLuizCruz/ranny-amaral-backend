@@ -3,6 +3,7 @@ package com.ranny.fotografia.contrato.service;
 import com.ranny.fotografia.agenda.AgendamentoConsulta;
 import com.ranny.fotografia.arquivo.ArquivoFinalidade;
 import com.ranny.fotografia.arquivo.ArquivoUpload;
+import com.ranny.fotografia.contrato.ContratoConsulta;
 import com.ranny.fotografia.contrato.api.ContratoRequest;
 import com.ranny.fotografia.contrato.api.ContratoResponse;
 import com.ranny.fotografia.contrato.api.ComprovanteDownloadResponse;
@@ -39,7 +40,11 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * PATTERN: Facade + State Machine (delegada ao agregado) + Observer (eventos).
@@ -53,7 +58,7 @@ import java.util.List;
  * a evolucao prevista e usar uma sequence/contador transacional.
  */
 @Service
-public class ContratoService {
+public class ContratoService implements ContratoConsulta {
 
     private static final ZoneId FUSO = ZoneId.of("America/Sao_Paulo");
     private static final String FORMA_PAGAMENTO_PADRAO = "Pix";
@@ -401,6 +406,45 @@ public class ContratoService {
 
     private void publicar(Contrato contrato) {
         eventos.publishEvent(ContratoEventoFactory.de(contrato));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ResumoFinanceiro> buscarPorAgendamento(String agendamentoId) {
+        if (agendamentoId == null || agendamentoId.isBlank()) {
+            return Optional.empty();
+        }
+        return contratoRepository.findFirstByAgendamentoIdOrderByDataEmissaoDesc(agendamentoId)
+                .map(ContratoService::paraResumoFinanceiro);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<String, ResumoFinanceiro> buscarPorAgendamentos(Collection<String> agendamentoIds) {
+        if (agendamentoIds == null || agendamentoIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, ResumoFinanceiro> resumos = new LinkedHashMap<>();
+        contratoRepository.findByAgendamentoIdInOrderByDataEmissaoDesc(agendamentoIds)
+                .forEach(contrato -> {
+                    if (contrato.getAgendamentoId() != null) {
+                        resumos.putIfAbsent(contrato.getAgendamentoId(),
+                                paraResumoFinanceiro(contrato));
+                    }
+                });
+        return resumos;
+    }
+
+    private static ResumoFinanceiro paraResumoFinanceiro(Contrato contrato) {
+        return new ResumoFinanceiro(
+                contrato.getId(),
+                contrato.getAgendamentoId(),
+                contrato.getValorTotal(),
+                contrato.getValorEntrada(),
+                contrato.getPercentualEntrada(),
+                contrato.getSaldoRestante(),
+                contrato.getStatusPagamento(),
+                contrato.getStatusPagamentoFinal());
     }
 
     private Contrato obter(String id) {

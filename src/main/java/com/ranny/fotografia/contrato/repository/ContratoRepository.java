@@ -5,6 +5,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /** PATTERN: Repository + Specification (filtros combinaveis). */
@@ -17,4 +19,6 @@ public interface ContratoRepository extends JpaRepository<Contrato, String>,
     Optional<Contrato> findFirstByAgendamentoIdOrderByDataEmissaoDesc(String agendamentoId);
 
     boolean existsByAgendamentoId(String agendamentoId);
+
+    List<Contrato> findByAgendamentoIdInOrderByDataEmissaoDesc(Collection<String> agendamentoIds);
 }

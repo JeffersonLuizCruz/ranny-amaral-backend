@@ -4,6 +4,7 @@ import com.ranny.fotografia.agenda.AgendamentoConsulta;
 import com.ranny.fotografia.arquivo.ArquivoFinalidade;
 import com.ranny.fotografia.arquivo.ArquivoUpload;
 import com.ranny.fotografia.cliente.ClienteConsulta;
+import com.ranny.fotografia.galeria.GaleriaConsulta;
 import com.ranny.fotografia.galeria.api.GaleriaDtos;
 import com.ranny.fotografia.galeria.model.DownloadGaleria;
 import com.ranny.fotografia.galeria.model.EventoGaleria;
@@ -49,9 +50,12 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -63,7 +67,7 @@ import java.util.Set;
  * extras, edicao e entrega. O binario continua no modulo {@code arquivo}.
  */
 @Service
-public class GaleriaService {
+public class GaleriaService implements GaleriaConsulta {
 
     private static final Logger log = LoggerFactory.getLogger(GaleriaService.class);
     private static final String ESTUDIO_PADRAO = "estudio";
@@ -702,6 +706,35 @@ public class GaleriaService {
                 .map(SelecaoItem::getMidiaId)
                 .toList();
         return GaleriaDtos.SelecaoResponse.de(selecao, fotoIds, videoIds);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<String, ResumoExtras> buscarExtrasPorAgendamentos(Collection<String> agendamentoIds) {
+        if (agendamentoIds == null || agendamentoIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, ResumoExtras> resumos = new LinkedHashMap<>();
+        for (Galeria galeria : galeriaRepository.findByAgendamentoIdIn(agendamentoIds)) {
+            extrasRepository.findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeria.getId())
+                    .ifPresent(pedido -> resumos.put(galeria.getAgendamentoId(),
+                            new ResumoExtras(
+                                    galeria.getId(),
+                                    pedido.getId(),
+                                    pedido.getQuantidadeFotos(),
+                                    pedido.getValorTotal(),
+                                    statusExtras(pedido.getStatus()))));
+        }
+        return resumos;
+    }
+
+    private static StatusExtras statusExtras(PedidoExtrasStatus status) {
+        return switch (status) {
+            case PENDENTE -> StatusExtras.PENDENTE;
+            case PAGO -> StatusExtras.PAGO;
+            case ISENTO -> StatusExtras.ISENTO;
+            case CANCELADO -> StatusExtras.CANCELADO;
+        };
     }
 
     private Galeria obter(String id) {
