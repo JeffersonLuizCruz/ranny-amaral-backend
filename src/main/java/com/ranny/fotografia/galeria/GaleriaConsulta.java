@@ -14,6 +14,9 @@ public interface GaleriaConsulta {
 
     Map<String, ResumoExtras> buscarExtrasPorAgendamentos(Collection<String> agendamentoIds);
 
+    /** Contagens por etapa para o dashboard operacional. */
+    ResumoOperacional resumoOperacional();
+
     enum StatusExtras {
         PENDENTE,
         PAGO,
@@ -27,6 +30,17 @@ public interface GaleriaConsulta {
             int quantidadeFotos,
             BigDecimal valorTotal,
             StatusExtras status
+    ) {
+    }
+
+    record ResumoOperacional(
+            long aguardandoUpload,
+            long emSelecao,
+            long selecaoEnviada,
+            long emEdicao,
+            long prontaEntrega,
+            long entregue,
+            long extrasPendentes
     ) {
     }
 }

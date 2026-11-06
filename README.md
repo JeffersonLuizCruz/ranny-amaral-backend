@@ -48,9 +48,11 @@ A suíte cobre:
 - CRUD e validações de clientes, pacotes e agenda;
 - paginação, ordenação estável, busca textual e validação de parâmetros;
 - upload de comprovante com validação de tipo/tamanho, multipart e MinIO real (quando `MINIO_TEST_ENDPOINT` está definido);
-- upload de fotos/vídeos, derivados, seleção, extras e entrega de galerias;
+- upload de fotos/vídeos, versão final editada, derivados, seleção, extras, liberação de RAW e entrega (ZIP streaming);
+- processamento assíncrono de derivados com polling no frontend;
 - financeiro mensal com precedência de contrato, extras e exclusões;
-- migração incremental `V1 → V4` com backfill de dados existentes (`PostgresMigrationIT`);
+- dashboard operacional com agenda, contratos, galerias e financeiro;
+- migração incremental `V1 → V5` com backfill de dados existentes (`PostgresMigrationIT`);
 - congelamento das condições comerciais do pacote;
 - numeração de contratos (`CT-AAAA-0001`) e protocolos de aceite (`ACE-AAAA-0001`);
 - ciclo de vida do link público (geração, visualização, aceite, expiração e cancelamento);
@@ -67,7 +69,11 @@ com.ranny.fotografia
 ├── cliente/     Cadastro de clientes (API pública ClienteConsulta)
 ├── pacote/      Catálogo de pacotes (API pública PacoteConsulta)
 ├── agenda/      Agendamentos, pagamentos e congelamento de condições
-└── contrato/    Contratos, modelos, estúdio e aceite público
+├── contrato/    Contratos, modelos, estúdio e aceite público
+├── arquivo/     Catálogo de arquivos e uploads pré-assinados
+├── galeria/     Mídias, seleção, edição, RAW e entrega
+├── financeiro/  Read model financeiro mensal
+└── dashboard/   Read model operacional agregado
 ```
 
 - Cada módulo expõe apenas o necessário no pacote raiz; o restante é interno.
@@ -84,8 +90,10 @@ com.ranny.fotografia
 - `src/main/resources/db/migration/V2__contratos_busca_paginacao.sql` adiciona `cliente_nome`/`pacote_nome` em `contratos` (com backfill a partir do snapshot), índices de busca/paginação e o índice de status/período da agenda.
 - `src/main/resources/db/migration/V3__arquivos_upload.sql` cria o catálogo genérico `arquivos` e adiciona `entrada_arquivo_id` em contratos/agendamentos.
 - `src/main/resources/db/migration/V4__galerias.sql` cria galerias, mídias, derivados, links, seleção, extras, downloads e histórico; também inclui `VIDEO_ORIGINAL` no catálogo de arquivos.
+- `src/main/resources/db/migration/V5__versao_editada.sql` adiciona `FOTO_EDITADA` ao catálogo e a origem (`ORIGINAL`/`EDITADA`) dos derivados.
+- `src/main/resources/db/migration/V6__liberacao_raw.sql` adiciona a liberação auditada de RAW na galeria e a versão baixada no histórico.
 - O Flyway é a fonte de verdade do schema; o Hibernate apenas valida (`ddl-auto=validate`).
-- **Nunca edite uma migração já aplicada.** Mudanças entram em `V4__...`, `V5__...`, etc.
+- **Nunca edite uma migração já aplicada.** Mudanças entram em `V7__...`, `V8__...`, etc.
 - `spring.flyway.baseline-on-migrate=true` protege bancos não vazios sem histórico; em banco novo, a V1 é aplicada normalmente.
 - O evento de contrato é compacto (chaves JSON curtas) para caber no `serialized_event varchar(255)`; `EventSerializationSpec` garante o limite.
 

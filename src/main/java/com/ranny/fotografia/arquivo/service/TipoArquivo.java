@@ -61,7 +61,7 @@ enum TipoArquivo {
         return switch (finalidade) {
             case COMPROVANTE_PAGAMENTO -> Set.of(PDF, JPEG, PNG, WEBP);
             case CONTRATO_PDF -> Set.of(PDF);
-            case FOTO_ORIGINAL, FOTO_DERIVADO -> Set.of(JPEG, PNG, WEBP);
+            case FOTO_ORIGINAL, FOTO_DERIVADO, FOTO_EDITADA -> Set.of(JPEG, PNG, WEBP);
             case VIDEO_ORIGINAL -> Set.of(MP4, MOV);
         };
     }

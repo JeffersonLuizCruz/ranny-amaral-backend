@@ -19,6 +19,16 @@ public interface ContratoConsulta {
 
     Map<String, ResumoFinanceiro> buscarPorAgendamentos(Collection<String> agendamentoIds);
 
+    /** Contagens acionaveis para o dashboard operacional. */
+    ResumoPendentes resumoPendentes();
+
+    record ResumoPendentes(
+            long aguardandoAceite,
+            long entradaPendente,
+            long saldoPendente
+    ) {
+    }
+
     record ResumoFinanceiro(
             String contratoId,
             String agendamentoId,

@@ -36,6 +36,9 @@ public final class GaleriaDtos {
             long totalVideos,
             long fotosDisponiveis,
             long videosDisponiveis,
+            boolean rawLiberado,
+            Instant rawLiberadoEm,
+            String rawLiberadoPor,
             String capaUrl,
             Instant createdAt,
             Instant updatedAt
@@ -57,6 +60,9 @@ public final class GaleriaDtos {
                     totalVideos,
                     fotosDisponiveis,
                     videosDisponiveis,
+                    galeria.isRawLiberado(),
+                    galeria.getRawLiberadoEm(),
+                    galeria.getRawLiberadoPor(),
                     capaUrl,
                     galeria.getAuditoria().getCriadoEm(),
                     galeria.getAuditoria().getAtualizadoEm());
@@ -79,10 +85,13 @@ public final class GaleriaDtos {
             String webUrl,
             String originalUrl,
             String editadaUrl,
+            boolean editadaDisponivel,
+            boolean editadaProcessando,
             Instant createdAt
     ) {
         public static MidiaResponse de(MidiaGaleria midia, String thumbUrl, String webUrl,
-                                       String originalUrl, String editadaUrl) {
+                                       String originalUrl, String editadaUrl,
+                                       boolean editadaProcessando) {
             return new MidiaResponse(
                     midia.getId(),
                     midia.getTipo().valor(),
@@ -99,6 +108,8 @@ public final class GaleriaDtos {
                     webUrl,
                     originalUrl,
                     editadaUrl,
+                    midia.temVersaoEditada(),
+                    editadaProcessando,
                     midia.getAuditoria().getCriadoEm());
         }
     }
@@ -229,6 +240,18 @@ public final class GaleriaDtos {
     ) {
     }
 
+    /** Upload da versao final editada; sempre uma foto. */
+    public record IniciarMidiaEditadaUploadRequest(
+            @NotBlank String nomeArquivo,
+            @NotBlank String mimeType,
+            long tamanho,
+            @NotBlank String checksumSha256
+    ) {
+    }
+
+    public record ConcluirMidiaEditadaUploadRequest(@NotNull List<ParteRequest> partes) {
+    }
+
     public record ParteRequest(int partNumber, String etag) {
     }
 
@@ -269,7 +292,11 @@ public final class GaleriaDtos {
     public record LiberacaoEdicaoRequest(String motivo, String por) {
     }
 
-    public record DownloadRequest(String midiaId) {
+    /** Liberacao dos originais (RAW); o "por" e auditado no historico. */
+    public record LiberacaoRawRequest(String por) {
+    }
+
+    public record DownloadRequest(String midiaId, String versao) {
     }
 
     public record DownloadResponse(String url, Instant expiraEm, String nomeArquivo) {

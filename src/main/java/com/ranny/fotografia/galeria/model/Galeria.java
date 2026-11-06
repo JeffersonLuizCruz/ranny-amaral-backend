@@ -14,6 +14,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -71,6 +72,15 @@ public class Galeria {
 
     @Column(name = "pedido_extras_id", length = 64)
     private String pedidoExtrasId;
+
+    @Column(name = "raw_liberado", nullable = false)
+    private boolean rawLiberado;
+
+    @Column(name = "raw_liberado_em")
+    private Instant rawLiberadoEm;
+
+    @Column(name = "raw_liberado_por", length = 120)
+    private String rawLiberadoPor;
 
     @Embedded
     private Auditoria auditoria;
@@ -132,6 +142,27 @@ public class Galeria {
 
     public void revogarEntrega() {
         this.status = GaleriaStatus.PRONTA_ENTREGA;
+        this.auditoria.marcarAtualizacao();
+    }
+
+    /**
+     * Libera os arquivos originais para download.
+     *
+     * <p>PATTERN: State Machine + Auditoria. A decisao e sempre explicita e
+     * reversivel; o motivo/quem fica registrado para rastreabilidade.
+     */
+    public void liberarRaw(String por) {
+        this.rawLiberado = true;
+        this.rawLiberadoEm = Instant.now();
+        this.rawLiberadoPor = por == null || por.isBlank()
+                ? "Equipe do estudio" : por;
+        this.auditoria.marcarAtualizacao();
+    }
+
+    public void revogarRaw() {
+        this.rawLiberado = false;
+        this.rawLiberadoEm = null;
+        this.rawLiberadoPor = null;
         this.auditoria.marcarAtualizacao();
     }
 

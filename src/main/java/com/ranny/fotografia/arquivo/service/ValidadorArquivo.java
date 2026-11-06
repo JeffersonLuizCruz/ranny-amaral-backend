@@ -52,7 +52,8 @@ public class ValidadorArquivo {
         return switch (finalidade) {
             case COMPROVANTE_PAGAMENTO -> "Envie um comprovante PDF, JPEG, PNG ou WebP.";
             case CONTRATO_PDF -> "Envie um contrato em PDF.";
-            case FOTO_ORIGINAL, FOTO_DERIVADO -> "Envie uma foto JPEG, PNG ou WebP.";
+            case FOTO_ORIGINAL, FOTO_DERIVADO, FOTO_EDITADA ->
+                    "Envie uma foto JPEG, PNG ou WebP.";
             case VIDEO_ORIGINAL -> "Envie um video MP4 ou MOV.";
         };
     }

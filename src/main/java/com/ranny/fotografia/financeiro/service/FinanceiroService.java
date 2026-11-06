@@ -5,6 +5,7 @@ import com.ranny.fotografia.agenda.AgendamentoConsulta.ResumoAgendamento;
 import com.ranny.fotografia.cliente.ClienteConsulta;
 import com.ranny.fotografia.contrato.ContratoConsulta;
 import com.ranny.fotografia.contrato.ContratoConsulta.ResumoFinanceiro;
+import com.ranny.fotografia.financeiro.FinanceiroConsulta;
 import com.ranny.fotografia.financeiro.api.FinanceiroDtos;
 import com.ranny.fotografia.galeria.GaleriaConsulta;
 import com.ranny.fotografia.galeria.GaleriaConsulta.ResumoExtras;
@@ -35,7 +36,7 @@ import java.util.Map;
  * agendamento; extras vem da galeria. Nenhum valor e recalculado no frontend.
  */
 @Service
-public class FinanceiroService {
+public class FinanceiroService implements FinanceiroConsulta {
 
     private static final ZoneId FUSO = ZoneId.of("America/Sao_Paulo");
     private static final BigDecimal CEM = BigDecimal.valueOf(100);
@@ -146,6 +147,19 @@ public class FinanceiroService {
                 ticketMedio,
                 percentualRecebido,
                 entradas);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public FinanceiroConsulta.ResumoDashboard resumoParaDashboard(String mes) {
+        FinanceiroDtos.ResumoMensalResponse resumo = resumoMensal(mes);
+        return new FinanceiroConsulta.ResumoDashboard(
+                resumo.mes(),
+                resumo.totalPrevisto(),
+                resumo.totalRecebido(),
+                resumo.totalAReceber(),
+                resumo.quantidadePendentes(),
+                resumo.quantidadeExtrasPendentes());
     }
 
     private FinanceiroDtos.EntradaResponse entrada(

@@ -5,6 +5,7 @@ import com.ranny.fotografia.shared.exception.ArmazenamentoException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -15,6 +16,7 @@ import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -27,6 +29,7 @@ import software.amazon.awssdk.services.s3.presigner.model.PresignedUploadPartReq
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 
+import java.io.InputStream;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -137,6 +140,20 @@ public class S3ObjectStorage implements ObjectStorage {
             return bytes.asByteArray();
         } catch (SdkException ex) {
             throw new ArmazenamentoException("Falha ao ler objeto do storage.", ex);
+        }
+    }
+
+    @Override
+    public InputStream abrir(String objectKey) {
+        try {
+            ResponseInputStream<GetObjectResponse> stream = s3.getObject(
+                    GetObjectRequest.builder()
+                            .bucket(properties.getBucket())
+                            .key(objectKey)
+                            .build());
+            return stream;
+        } catch (SdkException ex) {
+            throw new ArmazenamentoException("Falha ao abrir objeto do storage.", ex);
         }
     }
 

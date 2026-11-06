@@ -2,6 +2,8 @@ package com.ranny.fotografia.galeria.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
@@ -38,11 +40,22 @@ public class MidiaDerivado {
     @Column(length = 20)
     private String formato;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private MidiaDerivadoOrigem origem;
+
     @Column(name = "criado_em", nullable = false)
     private Instant criadoEm;
 
     public static MidiaDerivado criar(String midiaId, String tipo, String arquivoId,
                                       int largura, int altura, String formato) {
+        return criar(midiaId, tipo, arquivoId, largura, altura, formato,
+                MidiaDerivadoOrigem.ORIGINAL);
+    }
+
+    public static MidiaDerivado criar(String midiaId, String tipo, String arquivoId,
+                                      int largura, int altura, String formato,
+                                      MidiaDerivadoOrigem origem) {
         MidiaDerivado derivado = new MidiaDerivado();
         derivado.id = UUID.randomUUID().toString();
         derivado.midiaId = midiaId;
@@ -51,6 +64,7 @@ public class MidiaDerivado {
         derivado.largura = largura;
         derivado.altura = altura;
         derivado.formato = formato;
+        derivado.origem = origem == null ? MidiaDerivadoOrigem.ORIGINAL : origem;
         derivado.criadoEm = Instant.now();
         return derivado;
     }

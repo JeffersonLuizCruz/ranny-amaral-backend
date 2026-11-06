@@ -34,6 +34,9 @@ public class DownloadGaleria {
     @Column(name = "arquivo_id", nullable = false, length = 64)
     private String arquivoId;
 
+    @Column(length = 10)
+    private String versao;
+
     @Column(length = 45)
     private String ip;
 
@@ -44,13 +47,15 @@ public class DownloadGaleria {
     private Instant baixadoEm;
 
     public static DownloadGaleria criar(String galeriaId, String linkId, String midiaId,
-                                        String arquivoId, String ip, String userAgent) {
+                                        String arquivoId, String versao, String ip,
+                                        String userAgent) {
         DownloadGaleria download = new DownloadGaleria();
         download.id = UUID.randomUUID().toString();
         download.galeriaId = galeriaId;
         download.linkId = linkId;
         download.midiaId = midiaId;
         download.arquivoId = arquivoId;
+        download.versao = versao;
         download.ip = ip;
         download.userAgent = userAgent;
         download.baixadoEm = Instant.now();

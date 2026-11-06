@@ -4,6 +4,8 @@ import com.ranny.fotografia.arquivo.ArquivoUpload;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -72,6 +74,11 @@ public class FakeObjectStorage implements ObjectStorage {
     @Override
     public byte[] ler(String objectKey) {
         return objetos.getOrDefault(objectKey, primeirosSimulados);
+    }
+
+    @Override
+    public InputStream abrir(String objectKey) {
+        return new ByteArrayInputStream(ler(objectKey));
     }
 
     @Override

@@ -5,6 +5,7 @@ import com.ranny.fotografia.arquivo.ArquivoFinalidade;
 import com.ranny.fotografia.arquivo.ArquivoUpload;
 import com.ranny.fotografia.cliente.ClienteConsulta;
 import com.ranny.fotografia.galeria.GaleriaConsulta;
+import com.ranny.fotografia.galeria.event.MidiaProcessamentoEvent;
 import com.ranny.fotografia.galeria.api.GaleriaDtos;
 import com.ranny.fotografia.galeria.model.DownloadGaleria;
 import com.ranny.fotografia.galeria.model.EventoGaleria;
@@ -15,6 +16,7 @@ import com.ranny.fotografia.galeria.model.LinkGaleria;
 import com.ranny.fotografia.galeria.model.LinkGaleriaStatus;
 import com.ranny.fotografia.galeria.model.LinkGaleriaTipo;
 import com.ranny.fotografia.galeria.model.MidiaDerivado;
+import com.ranny.fotografia.galeria.model.MidiaDerivadoOrigem;
 import com.ranny.fotografia.galeria.model.MidiaGaleria;
 import com.ranny.fotografia.galeria.model.MidiaStatus;
 import com.ranny.fotografia.galeria.model.MidiaTipo;
@@ -40,23 +42,31 @@ import com.ranny.fotografia.shared.exception.RegraDeNegocioException;
 import com.ranny.fotografia.shared.model.PagamentoStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 /**
  * Casos de uso de galerias.
@@ -73,6 +83,7 @@ public class GaleriaService implements GaleriaConsulta {
     private static final String ESTUDIO_PADRAO = "estudio";
     private static final int DIAS_SELECAO = 30;
     private static final int DIAS_ENTREGA = 90;
+    private static final long ZIP_MAX_BYTES = 2L * 1024 * 1024 * 1024;
 
     private final GaleriaRepository galeriaRepository;
     private final MidiaGaleriaRepository midiaRepository;
@@ -87,6 +98,8 @@ public class GaleriaService implements GaleriaConsulta {
     private final ClienteConsulta clienteConsulta;
     private final ArquivoUpload arquivoUpload;
     private final ProcessadorMidia processadorMidia;
+    private final ApplicationEventPublisher eventos;
+    private final boolean processamentoAsync;
 
     public GaleriaService(GaleriaRepository galeriaRepository,
                           MidiaGaleriaRepository midiaRepository,
@@ -100,7 +113,10 @@ public class GaleriaService implements GaleriaConsulta {
                           AgendamentoConsulta agendamentoConsulta,
                           ClienteConsulta clienteConsulta,
                           ArquivoUpload arquivoUpload,
-                          ProcessadorMidia processadorMidia) {
+                          ProcessadorMidia processadorMidia,
+                          ApplicationEventPublisher eventos,
+                          @Value("${app.galeria.processamento-async:true}")
+                          boolean processamentoAsync) {
         this.galeriaRepository = galeriaRepository;
         this.midiaRepository = midiaRepository;
         this.derivadoRepository = derivadoRepository;
@@ -114,6 +130,8 @@ public class GaleriaService implements GaleriaConsulta {
         this.clienteConsulta = clienteConsulta;
         this.arquivoUpload = arquivoUpload;
         this.processadorMidia = processadorMidia;
+        this.eventos = eventos;
+        this.processamentoAsync = processamentoAsync;
     }
 
     @Transactional
@@ -250,7 +268,12 @@ public class GaleriaService implements GaleriaConsulta {
         evento(galeria, EventoGaleriaTipo.MIDIA_ENVIADA, arquivo.nomeOriginal() + " enviada.");
 
         if (tipo == MidiaTipo.FOTO) {
-            processarMidia(midia, galeria);
+            if (processamentoAsync) {
+                eventos.publishEvent(new MidiaProcessamentoEvent(
+                        galeriaId, midia.getId(), arquivo.id(), false));
+            } else {
+                processarMidia(midia, galeria);
+            }
         }
         midiaRepository.saveAndFlush(midia);
         return midiaResponse(midia, galeriaId, true);
@@ -269,10 +292,104 @@ public class GaleriaService implements GaleriaConsulta {
     @Transactional
     public void removerMidia(String galeriaId, String midiaId) {
         Galeria galeria = obter(galeriaId);
-        MidiaGaleria midia = midiaRepository.findByIdAndGaleriaId(midiaId, galeriaId)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Midia", midiaId));
+        MidiaGaleria midia = midiaDaGaleria(galeriaId, midiaId);
         midia.remover();
         evento(galeria, EventoGaleriaTipo.MIDIA_REMOVIDA, midia.getNomeOriginal() + " removida.");
+    }
+
+    @Transactional
+    public GaleriaDtos.UploadSessaoResponse iniciarUploadEditada(
+            String galeriaId, String midiaId,
+            GaleriaDtos.IniciarMidiaEditadaUploadRequest request) {
+        Galeria galeria = obter(galeriaId);
+        MidiaGaleria midia = midiaDaGaleria(galeriaId, midiaId);
+        validarVersaoEditada(galeria, midia);
+
+        ArquivoFinalidade finalidade = ArquivoFinalidade.FOTO_EDITADA;
+        ArquivoUpload.IniciarUpload comando = new ArquivoUpload.IniciarUpload(
+                finalidade,
+                galeriaId,
+                "estudios/%s/galerias/%s/editadas/%s"
+                        .formatted(galeria.getEstudioId(), galeriaId, midiaId),
+                request.nomeArquivo(),
+                request.mimeType(),
+                request.tamanho(),
+                request.checksumSha256(),
+                arquivoUpload.tamanhoMaximo(finalidade));
+        return GaleriaDtos.UploadSessaoResponse.de(arquivoUpload.iniciar(comando));
+    }
+
+    @Transactional
+    public GaleriaDtos.MidiaResponse concluirUploadEditada(
+            String galeriaId, String midiaId, String arquivoId,
+            GaleriaDtos.ConcluirMidiaEditadaUploadRequest request) {
+        Galeria galeria = obter(galeriaId);
+        MidiaGaleria midia = midiaDaGaleria(galeriaId, midiaId);
+        validarVersaoEditada(galeria, midia);
+
+        List<ArquivoUpload.ParteEnviada> partes = request.partes().stream()
+                .map(parte -> new ArquivoUpload.ParteEnviada(parte.partNumber(), parte.etag()))
+                .toList();
+        ArquivoUpload.ArquivoResumo arquivo = arquivoUpload.concluir(
+                arquivoId, ArquivoFinalidade.FOTO_EDITADA, galeriaId, partes);
+        if (processamentoAsync) {
+            midia.vincularEditada(arquivo.id(), null, null);
+            midiaRepository.saveAndFlush(midia);
+            eventos.publishEvent(new MidiaProcessamentoEvent(
+                    galeriaId, midiaId, arquivo.id(), true));
+        } else {
+            processarVersaoEditada(midia, galeria, arquivo.id());
+            midiaRepository.saveAndFlush(midia);
+        }
+        evento(galeria, EventoGaleriaTipo.MIDIA_EDITADA,
+                "Versao editada de " + midia.getNomeOriginal() + " enviada.");
+        return midiaResponse(midia, galeriaId, true);
+    }
+
+    /**
+     * Executa o processamento solicitado pelo listener assincrono.
+     *
+     * <p>PATTERN: Idempotent Consumer. Eventos antigos sao ignorados quando o
+     * arquivo vinculado nao e mais o atual; o metodo recarrega o agregado em uma
+     * transacao propria.
+     */
+    @Transactional
+    public void processarMidiaSolicitada(String galeriaId, String midiaId,
+                                         String arquivoId, boolean editada) {
+        Galeria galeria = obter(galeriaId);
+        MidiaGaleria midia = midiaDaGaleria(galeriaId, midiaId);
+        if (editada) {
+            if (!arquivoId.equals(midia.getArquivoEditadoId())) {
+                return;
+            }
+            processarVersaoEditada(midia, galeria, arquivoId);
+        } else {
+            if (!arquivoId.equals(midia.getArquivoOriginalId())) {
+                return;
+            }
+            processarMidia(midia, galeria);
+        }
+        midiaRepository.saveAndFlush(midia);
+    }
+
+    @Transactional
+    public void abortarUploadEditada(String galeriaId, String midiaId, String arquivoId) {
+        obter(galeriaId);
+        midiaDaGaleria(galeriaId, midiaId);
+        arquivoUpload.abortar(arquivoId, ArquivoFinalidade.FOTO_EDITADA, galeriaId);
+    }
+
+    @Transactional
+    public void removerVersaoEditada(String galeriaId, String midiaId) {
+        Galeria galeria = obter(galeriaId);
+        MidiaGaleria midia = midiaDaGaleria(galeriaId, midiaId);
+        if (!midia.temVersaoEditada()) {
+            return;
+        }
+        derivadoRepository.deleteByMidiaIdAndOrigem(midia.getId(), MidiaDerivadoOrigem.EDITADA);
+        midia.removerEditada();
+        evento(galeria, EventoGaleriaTipo.MIDIA_EDITADA_REMOVIDA,
+                "Versao editada de " + midia.getNomeOriginal() + " removida.");
     }
 
     @Transactional
@@ -464,6 +581,12 @@ public class GaleriaService implements GaleriaConsulta {
             throw new RegraDeNegocioException("EXTRAS_PENDENTES",
                     "Confirme ou isente os extras antes de publicar a entrega.");
         }
+        long semEntrega = fotosSemEntrega(galeria);
+        if (semEntrega > 0) {
+            throw new RegraDeNegocioException("FOTOS_SEM_ENTREGA",
+                    "%d foto(s) selecionada(s) ainda nao possuem versao editada e o RAW nao foi liberado."
+                            .formatted(semEntrega));
+        }
         LinkGaleria link = linkRepository
                 .findFirstByGaleriaIdAndTipoAndStatusOrderByExpiraEmDesc(
                         galeriaId, LinkGaleriaTipo.ENTREGA, LinkGaleriaStatus.ATIVO)
@@ -487,6 +610,32 @@ public class GaleriaService implements GaleriaConsulta {
                 .ifPresent(LinkGaleria::revogar);
         galeria.revogarEntrega();
         evento(galeria, EventoGaleriaTipo.ENTREGA_REVOGADA, "Entrega revogada.");
+    }
+
+    @Transactional
+    public GaleriaDtos.GaleriaResponse liberarRaw(String galeriaId, String por) {
+        Galeria galeria = obter(galeriaId);
+        validarLiberacaoRaw(galeria);
+        galeria.liberarRaw(por);
+        evento(galeria, EventoGaleriaTipo.RAW_LIBERADO,
+                "Arquivos originais liberados para download.");
+        return response(galeria);
+    }
+
+    @Transactional
+    public GaleriaDtos.GaleriaResponse revogarRaw(String galeriaId) {
+        Galeria galeria = obter(galeriaId);
+        if (!galeria.isRawLiberado()) {
+            return response(galeria);
+        }
+        if (fotosSemEdicao(galeria) > 0) {
+            throw new RegraDeNegocioException("RAW_EM_USO",
+                    "Envie as versoes editadas antes de revogar o RAW; ha fotos sem versao final.");
+        }
+        galeria.revogarRaw();
+        evento(galeria, EventoGaleriaTipo.RAW_REVOGADO,
+                "Liberacao dos arquivos originais revogada.");
+        return response(galeria);
     }
 
     @Transactional
@@ -521,7 +670,7 @@ public class GaleriaService implements GaleriaConsulta {
 
     @Transactional
     public GaleriaDtos.DownloadResponse registrarDownload(
-            String token, String midiaId, String ip, String userAgent) {
+            String token, String midiaId, String versao, String ip, String userAgent) {
         LinkGaleria link = linkAtivo(token, LinkGaleriaTipo.ENTREGA);
         Galeria galeria = obter(link.getGaleriaId());
         if (galeria.getStatus() != GaleriaStatus.ENTREGUE) {
@@ -534,21 +683,196 @@ public class GaleriaService implements GaleriaConsulta {
             throw new RecursoNaoEncontradoException("Midia", midiaId);
         }
 
-        String arquivoId = midia.getArquivoEditadoId() == null
-                ? midia.getArquivoOriginalId()
-                : midia.getArquivoEditadoId();
-        ArquivoFinalidade finalidade = midia.getArquivoEditadoId() == null
+        String solicitada = versao == null || versao.isBlank()
+                ? null : versao.trim().toLowerCase(Locale.ROOT);
+        boolean original;
+        if (midia.getTipo() == MidiaTipo.VIDEO) {
+            original = true;
+        } else if (solicitada == null) {
+            original = !midia.temVersaoEditada();
+        } else if ("original".equals(solicitada) || "raw".equals(solicitada)) {
+            original = true;
+        } else if ("editada".equals(solicitada)) {
+            original = false;
+        } else {
+            throw new RegraDeNegocioException("VERSAO_INVALIDA",
+                    "Informe a versao 'editada' ou 'original'.");
+        }
+
+        if (original && midia.getTipo() == MidiaTipo.FOTO && !galeria.isRawLiberado()) {
+            throw new RegraDeNegocioException("RAW_NAO_LIBERADO",
+                    "Os arquivos originais ainda nao foram liberados.");
+        }
+        if (!original && !midia.temVersaoEditada()) {
+            throw new RegraDeNegocioException("EDICAO_NAO_DISPONIVEL",
+                    "Esta foto ainda nao possui versao editada.");
+        }
+
+        String arquivoId = original ? midia.getArquivoOriginalId() : midia.getArquivoEditadoId();
+        ArquivoFinalidade finalidade = original
                 ? (midia.getTipo() == MidiaTipo.FOTO
                 ? ArquivoFinalidade.FOTO_ORIGINAL : ArquivoFinalidade.VIDEO_ORIGINAL)
-                : ArquivoFinalidade.FOTO_DERIVADO;
+                : ArquivoFinalidade.FOTO_EDITADA;
         ArquivoUpload.UrlDownload download = arquivoUpload.urlDownload(
                 arquivoId, finalidade, galeria.getId());
         downloadRepository.save(DownloadGaleria.criar(
-                galeria.getId(), link.getId(), midia.getId(), arquivoId, ip, userAgent));
+                galeria.getId(), link.getId(), midia.getId(), arquivoId,
+                original ? "ORIGINAL" : "EDITADA", ip, userAgent));
         evento(galeria, EventoGaleriaTipo.DOWNLOAD_REGISTRADO,
-                midia.getNomeOriginal() + " baixada.");
+                midia.getNomeOriginal() + " baixada (" + (original ? "original" : "editada") + ").");
         return new GaleriaDtos.DownloadResponse(
                 download.url(), download.expiraEm(), midia.getNomeOriginal());
+    }
+
+    private void validarLiberacaoRaw(Galeria galeria) {
+        if (galeria.getStatus() != GaleriaStatus.SELECAO_ENVIADA
+                && galeria.getStatus() != GaleriaStatus.EM_EDICAO
+                && galeria.getStatus() != GaleriaStatus.PRONTA_ENTREGA
+                && galeria.getStatus() != GaleriaStatus.ENTREGUE) {
+            throw new RegraDeNegocioException("RAW_INDISPONIVEL",
+                    "Libere os originais apos a selecao do cliente.");
+        }
+        if (selecaoRepository.findFirstByGaleriaIdOrderByEnviadaEmDesc(galeria.getId()).isEmpty()) {
+            throw new RegraDeNegocioException("SEM_SELECAO",
+                    "A galeria ainda nao possui selecao enviada.");
+        }
+    }
+
+    /**
+     * Conta fotos selecionadas que ainda nao podem ser entregues.
+     *
+     * <p>Uma foto e entregavel quando possui versao editada ou quando o RAW foi
+     * liberado explicitamente pelo staff. Sem isso, publicar a entrega
+     * disponibilizaria o original por acidente.
+     */
+    private long fotosSemEntrega(Galeria galeria) {
+        if (galeria.isRawLiberado()) {
+            return 0;
+        }
+        return fotosSemEdicao(galeria);
+    }
+
+    private long fotosSemEdicao(Galeria galeria) {
+        return midiasDaSelecao(galeria.getId()).stream()
+                .filter(midia -> midia.getTipo() == MidiaTipo.FOTO)
+                .filter(midia -> !midia.temVersaoEditada())
+                .count();
+    }
+
+    /**
+     * Valida o ZIP antes de iniciar o streaming.
+     *
+     * <p>PATTERN: Guard Clauses. O controller so abre a resposta depois de
+     * confirmar link, permissao de RAW e existencia de arquivos; assim os erros
+     * ainda podem ser devolvidos como JSON.
+     */
+    @Transactional(readOnly = true)
+    public int validarZip(String token, String versao) {
+        return entradasZip(token, versao).size();
+    }
+
+    /**
+     * Escreve o ZIP diretamente na resposta, sem carregar a galeria em memoria.
+     *
+     * <p>PATTERN: Streaming / Pipeline. Cada arquivo e lido do storage por stream
+     * e copiado para o ZIP; o backend nao materializa o pacote inteiro.
+     */
+    @Transactional(readOnly = true)
+    public void escreverZip(String token, String versao, OutputStream saida)
+            throws IOException {
+        List<EntradaZip> entradas = entradasZip(token, versao);
+        Set<String> nomes = new HashSet<>();
+        try (ZipOutputStream zip = new ZipOutputStream(saida)) {
+            for (EntradaZip entrada : entradas) {
+                zip.putNextEntry(new ZipEntry(nomeUnico(entrada.nome(), nomes)));
+                try (InputStream conteudo = arquivoUpload.abrirStream(
+                        entrada.arquivoId(), entrada.finalidade(), entrada.galeriaId())) {
+                    conteudo.transferTo(zip);
+                }
+                zip.closeEntry();
+            }
+            zip.finish();
+        }
+    }
+
+    private List<EntradaZip> entradasZip(String token, String versao) {
+        LinkGaleria link = linkAtivo(token, LinkGaleriaTipo.ENTREGA);
+        Galeria galeria = obter(link.getGaleriaId());
+        if (galeria.getStatus() != GaleriaStatus.ENTREGUE) {
+            throw new RegraDeNegocioException("ENTREGA_INDISPONIVEL",
+                    "A entrega ainda nao foi publicada.");
+        }
+        String solicitada = versao == null || versao.isBlank()
+                ? "editada" : versao.trim().toLowerCase(Locale.ROOT);
+        boolean original;
+        if ("original".equals(solicitada) || "raw".equals(solicitada)) {
+            original = true;
+        } else if ("editada".equals(solicitada)) {
+            original = false;
+        } else {
+            throw new RegraDeNegocioException("VERSAO_INVALIDA",
+                    "Informe a versao 'editada' ou 'original'.");
+        }
+
+        List<EntradaZip> entradas = new ArrayList<>();
+        long totalBytes = 0;
+        for (MidiaGaleria midia : midiasDaSelecao(galeria.getId())) {
+            if (midia.getTipo() == MidiaTipo.FOTO && !original && !midia.temVersaoEditada()) {
+                continue;
+            }
+            String arquivoId;
+            ArquivoFinalidade finalidade;
+            if (midia.getTipo() == MidiaTipo.VIDEO) {
+                arquivoId = midia.getArquivoOriginalId();
+                finalidade = ArquivoFinalidade.VIDEO_ORIGINAL;
+            } else if (original) {
+                if (!galeria.isRawLiberado()) {
+                    throw new RegraDeNegocioException("RAW_NAO_LIBERADO",
+                            "Os arquivos originais ainda nao foram liberados.");
+                }
+                arquivoId = midia.getArquivoOriginalId();
+                finalidade = ArquivoFinalidade.FOTO_ORIGINAL;
+            } else {
+                arquivoId = midia.getArquivoEditadoId();
+                finalidade = ArquivoFinalidade.FOTO_EDITADA;
+            }
+            long tamanho = arquivoUpload.buscar(arquivoId, finalidade, galeria.getId())
+                    .map(ArquivoUpload.ArquivoResumo::tamanhoBytes)
+                    .orElse(0L);
+            totalBytes += tamanho;
+            if (totalBytes > ZIP_MAX_BYTES) {
+                throw new RegraDeNegocioException("ZIP_MUITO_GRANDE",
+                        "A galeria excede o limite de 2 GB para download em lote.");
+            }
+            entradas.add(new EntradaZip(galeria.getId(), arquivoId, finalidade,
+                    midia.getNomeOriginal()));
+        }
+        if (entradas.isEmpty()) {
+            throw new RegraDeNegocioException("ZIP_SEM_ARQUIVOS",
+                    "Nenhum arquivo disponivel para download em lote.");
+        }
+        return entradas;
+    }
+
+    private static String nomeUnico(String nome, Set<String> usados) {
+        String base = nome == null || nome.isBlank()
+                ? "arquivo" : nome.replaceAll("[\\\\/:*?\"<>|]", "_");
+        if (usados.add(base)) {
+            return base;
+        }
+        int ponto = base.lastIndexOf('.');
+        String stem = ponto > 0 ? base.substring(0, ponto) : base;
+        String extensao = ponto > 0 ? base.substring(ponto) : "";
+        int indice = 2;
+        String candidato;
+        do {
+            candidato = stem + " (" + indice++ + ")" + extensao;
+        } while (!usados.add(candidato));
+        return candidato;
+    }
+
+    private record EntradaZip(String galeriaId, String arquivoId,
+                              ArquivoFinalidade finalidade, String nome) {
     }
 
     private void processarMidia(MidiaGaleria midia, Galeria galeria) {
@@ -660,19 +984,37 @@ public class GaleriaService implements GaleriaConsulta {
 
     private GaleriaDtos.MidiaResponse midiaResponse(MidiaGaleria midia, String galeriaId,
                                                      boolean exporOriginal) {
-        String thumbUrl = null;
-        String webUrl = null;
-        String editadaUrl = null;
+        String thumbOriginal = null;
+        String webOriginal = null;
+        String thumbEditada = null;
+        String webEditada = null;
+        boolean temDerivadoEditado = false;
         if (midia.getTipo() == MidiaTipo.FOTO) {
             for (MidiaDerivado derivado : derivadoRepository.findByMidiaId(midia.getId())) {
-                String url = urlOuNull(derivado.getArquivoId(), ArquivoFinalidade.FOTO_DERIVADO, galeriaId);
+                String url = urlOuNull(derivado.getArquivoId(),
+                        ArquivoFinalidade.FOTO_DERIVADO, galeriaId);
+                boolean editada = derivado.getOrigem() == MidiaDerivadoOrigem.EDITADA;
+                if (editada) {
+                    temDerivadoEditado = true;
+                }
                 if ("THUMB".equals(derivado.getTipo())) {
-                    thumbUrl = url;
+                    if (editada) {
+                        thumbEditada = url;
+                    } else {
+                        thumbOriginal = url;
+                    }
                 } else if ("WEB".equals(derivado.getTipo())) {
-                    webUrl = url;
+                    if (editada) {
+                        webEditada = url;
+                    } else {
+                        webOriginal = url;
+                    }
                 }
             }
         }
+        // A entrega prioriza a versao final; o estudio ainda ve o original em originalUrl.
+        String thumbUrl = thumbEditada == null ? thumbOriginal : thumbEditada;
+        String webUrl = webEditada == null ? webOriginal : webEditada;
         String originalUrl = null;
         if (exporOriginal || midia.getTipo() == MidiaTipo.VIDEO) {
             originalUrl = urlOuNull(midia.getArquivoOriginalId(),
@@ -680,11 +1022,81 @@ public class GaleriaService implements GaleriaConsulta {
                             ? ArquivoFinalidade.FOTO_ORIGINAL : ArquivoFinalidade.VIDEO_ORIGINAL,
                     galeriaId);
         }
+        String editadaUrl = null;
         if (midia.getArquivoEditadoId() != null) {
             editadaUrl = urlOuNull(midia.getArquivoEditadoId(),
-                    ArquivoFinalidade.FOTO_DERIVADO, galeriaId);
+                    ArquivoFinalidade.FOTO_EDITADA, galeriaId);
         }
-        return GaleriaDtos.MidiaResponse.de(midia, thumbUrl, webUrl, originalUrl, editadaUrl);
+        boolean editadaProcessando = midia.temVersaoEditada() && !temDerivadoEditado;
+        return GaleriaDtos.MidiaResponse.de(midia, thumbUrl, webUrl, originalUrl, editadaUrl,
+                editadaProcessando);
+    }
+
+    private MidiaGaleria midiaDaGaleria(String galeriaId, String midiaId) {
+        return midiaRepository.findByIdAndGaleriaId(midiaId, galeriaId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Midia", midiaId));
+    }
+
+    private void validarVersaoEditada(Galeria galeria, MidiaGaleria midia) {
+        if (midia.getTipo() != MidiaTipo.FOTO) {
+            throw new RegraDeNegocioException("EDICAO_APENAS_FOTOS",
+                    "Somente fotos podem receber versao editada.");
+        }
+        if (galeria.getStatus() != GaleriaStatus.SELECAO_ENVIADA
+                && galeria.getStatus() != GaleriaStatus.EM_EDICAO
+                && galeria.getStatus() != GaleriaStatus.PRONTA_ENTREGA
+                && galeria.getStatus() != GaleriaStatus.ENTREGUE) {
+            throw new RegraDeNegocioException("EDICAO_INDISPONIVEL",
+                    "Envie versoes editadas apos a selecao do cliente.");
+        }
+        if (!midiaSelecionada(galeria.getId(), midia.getId())) {
+            throw new RegraDeNegocioException("MIDIA_NAO_SELECIONADA",
+                    "Envie versoes editadas apenas das fotos selecionadas.");
+        }
+        if (!midia.estaDisponivel()) {
+            throw new RegraDeNegocioException("MIDIA_INDISPONIVEL",
+                    "A foto original ainda nao esta disponivel.");
+        }
+    }
+
+    /**
+     * Processa a versao editada e recria os derivados tecnicos dela.
+     *
+     * <p>PATTERN: Pipeline / Strategy. O processamento usa a mesma porta
+     * {@link ProcessadorMidia} do original, mas grava os derivados com origem
+     * EDITADA para a entrega priorizar a versao final.
+     */
+    private void processarVersaoEditada(MidiaGaleria midia, Galeria galeria, String arquivoId) {
+        try {
+            derivadoRepository.deleteByMidiaIdAndOrigem(
+                    midia.getId(), MidiaDerivadoOrigem.EDITADA);
+            byte[] conteudo = arquivoUpload.abrirConteudo(
+                    arquivoId, ArquivoFinalidade.FOTO_EDITADA, galeria.getId());
+            ProcessadorMidia.Resultado resultado = processadorMidia.processar(
+                    conteudo, midia.getNomeOriginal());
+            for (ProcessadorMidia.Derivado derivado : resultado.derivados()) {
+                ArquivoUpload.ArquivoResumo arquivo = arquivoUpload.salvarDisponivel(
+                        new ArquivoUpload.IniciarArquivo(
+                                ArquivoFinalidade.FOTO_DERIVADO,
+                                galeria.getId(),
+                                "estudios/%s/galerias/%s/editadas/%s/derivados"
+                                        .formatted(galeria.getEstudioId(), galeria.getId(),
+                                                midia.getId()),
+                                derivado.nomeArquivo(),
+                                derivado.mimeType()),
+                        derivado.conteudo());
+                derivadoRepository.save(MidiaDerivado.criar(
+                        midia.getId(), derivado.tipo(), arquivo.id(),
+                        derivado.largura(), derivado.altura(), "jpg",
+                        MidiaDerivadoOrigem.EDITADA));
+            }
+            midia.vincularEditada(arquivoId, resultado.largura(), resultado.altura());
+        } catch (RuntimeException ex) {
+            log.warn("Falha ao processar versao editada da midia {}: {}",
+                    midia.getId(), ex.getMessage());
+            throw new RegraDeNegocioException("EDICAO_INVALIDA",
+                    "Nao foi possivel processar a versao editada.");
+        }
     }
 
     private String urlOuNull(String arquivoId, ArquivoFinalidade finalidade, String galeriaId) {
@@ -726,6 +1138,19 @@ public class GaleriaService implements GaleriaConsulta {
                                     statusExtras(pedido.getStatus()))));
         }
         return resumos;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ResumoOperacional resumoOperacional() {
+        return new ResumoOperacional(
+                galeriaRepository.countByStatus(GaleriaStatus.AGUARDANDO_UPLOAD),
+                galeriaRepository.countByStatus(GaleriaStatus.EM_SELECAO),
+                galeriaRepository.countByStatus(GaleriaStatus.SELECAO_ENVIADA),
+                galeriaRepository.countByStatus(GaleriaStatus.EM_EDICAO),
+                galeriaRepository.countByStatus(GaleriaStatus.PRONTA_ENTREGA),
+                galeriaRepository.countByStatus(GaleriaStatus.ENTREGUE),
+                extrasRepository.countByStatus(PedidoExtrasStatus.PENDENTE));
     }
 
     private static StatusExtras statusExtras(PedidoExtrasStatus status) {

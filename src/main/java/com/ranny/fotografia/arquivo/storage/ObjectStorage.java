@@ -26,6 +26,9 @@ public interface ObjectStorage {
 
     byte[] ler(String objectKey);
 
+    /** Abre um stream de leitura para downloads em lote (ex.: ZIP). */
+    java.io.InputStream abrir(String objectKey);
+
     void salvar(String objectKey, byte[] conteudo, String mimeType);
 
     ObjectMetadata concluirMultipart(String objectKey, String uploadId,

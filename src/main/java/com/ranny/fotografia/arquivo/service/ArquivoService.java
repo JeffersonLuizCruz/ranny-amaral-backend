@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.io.InputStream;
 import java.time.Duration;
 import java.time.Instant;
 import java.security.MessageDigest;
@@ -180,6 +181,17 @@ public class ArquivoService implements ArquivoUpload {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public InputStream abrirStream(String arquivoId, ArquivoFinalidade finalidade,
+                                   String referenciaId) {
+        Arquivo arquivo = obter(arquivoId, finalidade, referenciaId);
+        if (!arquivo.estaDisponivel()) {
+            throw new RecursoNaoEncontradoException("Arquivo", arquivoId);
+        }
+        return storage.abrir(arquivo.getObjectKey());
+    }
+
+    @Override
     @Transactional
     public ArquivoResumo salvarDisponivel(IniciarArquivo comando, byte[] conteudo) {
         String checksum = sha256(conteudo);
@@ -212,7 +224,7 @@ public class ArquivoService implements ArquivoUpload {
     public long tamanhoMaximo(ArquivoFinalidade finalidade) {
         return switch (finalidade) {
             case COMPROVANTE_PAGAMENTO -> properties.getMaxComprovanteBytes();
-            case FOTO_ORIGINAL -> 50L * 1024 * 1024;
+            case FOTO_ORIGINAL, FOTO_EDITADA -> 50L * 1024 * 1024;
             case VIDEO_ORIGINAL -> 500L * 1024 * 1024;
             default -> properties.getMaxComprovanteBytes();
         };

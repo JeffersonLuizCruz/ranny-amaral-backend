@@ -435,6 +435,17 @@ public class ContratoService implements ContratoConsulta {
         return resumos;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public ResumoPendentes resumoPendentes() {
+        return new ResumoPendentes(
+                contratoRepository.countByStatusAceite(StatusAceite.PENDENTE),
+                contratoRepository.countByStatusAceiteNotAndStatusPagamento(
+                        StatusAceite.CANCELADO, PagamentoStatus.PENDENTE),
+                contratoRepository.countByStatusAceiteNotAndStatusPagamentoFinal(
+                        StatusAceite.CANCELADO, PagamentoStatus.PENDENTE));
+    }
+
     private static ResumoFinanceiro paraResumoFinanceiro(Contrato contrato) {
         return new ResumoFinanceiro(
                 contrato.getId(),

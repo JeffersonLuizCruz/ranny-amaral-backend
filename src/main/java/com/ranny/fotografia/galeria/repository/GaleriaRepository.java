@@ -1,6 +1,7 @@
 package com.ranny.fotografia.galeria.repository;
 
 import com.ranny.fotografia.galeria.model.Galeria;
+import com.ranny.fotografia.galeria.model.GaleriaStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
@@ -16,4 +17,6 @@ public interface GaleriaRepository extends JpaRepository<Galeria, String>,
     Optional<Galeria> findByAgendamentoId(String agendamentoId);
 
     List<Galeria> findByAgendamentoIdIn(Collection<String> agendamentoIds);
+
+    long countByStatus(GaleriaStatus status);
 }

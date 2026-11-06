@@ -87,6 +87,38 @@ public class GaleriaController {
         galeriaService.removerMidia(id, midiaId);
     }
 
+    @PostMapping("/{id}/midias/{midiaId}/editada/upload")
+    @Operation(summary = "Inicia o upload da versao final editada de uma foto")
+    public GaleriaDtos.UploadSessaoResponse iniciarUploadEditada(
+            @PathVariable String id,
+            @PathVariable String midiaId,
+            @Valid @RequestBody GaleriaDtos.IniciarMidiaEditadaUploadRequest request) {
+        return galeriaService.iniciarUploadEditada(id, midiaId, request);
+    }
+
+    @PostMapping("/{id}/midias/{midiaId}/editada/upload/{arquivoId}/complete")
+    @Operation(summary = "Conclui o upload da versao editada e gera os derivados")
+    public GaleriaDtos.MidiaResponse concluirUploadEditada(
+            @PathVariable String id,
+            @PathVariable String midiaId,
+            @PathVariable String arquivoId,
+            @Valid @RequestBody GaleriaDtos.ConcluirMidiaEditadaUploadRequest request) {
+        return galeriaService.concluirUploadEditada(id, midiaId, arquivoId, request);
+    }
+
+    @PostMapping("/{id}/midias/{midiaId}/editada/upload/{arquivoId}/abort")
+    @Operation(summary = "Aborta o upload da versao editada")
+    public void abortarUploadEditada(@PathVariable String id, @PathVariable String midiaId,
+                                     @PathVariable String arquivoId) {
+        galeriaService.abortarUploadEditada(id, midiaId, arquivoId);
+    }
+
+    @DeleteMapping("/{id}/midias/{midiaId}/editada")
+    @Operation(summary = "Remove a versao editada vinculada a uma foto")
+    public void removerVersaoEditada(@PathVariable String id, @PathVariable String midiaId) {
+        galeriaService.removerVersaoEditada(id, midiaId);
+    }
+
     @PostMapping("/{id}/selecao/publicar")
     @Operation(summary = "Publica ou renova o link de selecao")
     public GaleriaDtos.LinkResponse publicarSelecao(@PathVariable String id) {
@@ -144,5 +176,19 @@ public class GaleriaController {
     @Operation(summary = "Revoga o link de entrega")
     public void revogarEntrega(@PathVariable String id) {
         galeriaService.revogarEntrega(id);
+    }
+
+    @PostMapping("/{id}/entrega/liberar-raw")
+    @Operation(summary = "Libera os arquivos originais para download")
+    public GaleriaDtos.GaleriaResponse liberarRaw(
+            @PathVariable String id,
+            @RequestBody(required = false) GaleriaDtos.LiberacaoRawRequest request) {
+        return galeriaService.liberarRaw(id, request == null ? null : request.por());
+    }
+
+    @PostMapping("/{id}/entrega/revogar-raw")
+    @Operation(summary = "Revoga a liberacao dos arquivos originais")
+    public GaleriaDtos.GaleriaResponse revogarRaw(@PathVariable String id) {
+        return galeriaService.revogarRaw(id);
     }
 }

@@ -34,6 +34,10 @@ public interface ArquivoUpload {
     /** Le o conteudo para processamento interno (ex.: gerar derivados). */
     byte[] abrirConteudo(String arquivoId, ArquivoFinalidade finalidade, String referenciaId);
 
+    /** Abre um stream de leitura para downloads em lote. */
+    java.io.InputStream abrirStream(String arquivoId, ArquivoFinalidade finalidade,
+                                    String referenciaId);
+
     /** Salva um arquivo gerado pelo proprio backend (ex.: miniatura web). */
     ArquivoResumo salvarDisponivel(IniciarArquivo comando, byte[] conteudo);
 

@@ -125,6 +125,15 @@ public class MidiaGaleria {
         this.auditoria.marcarAtualizacao();
     }
 
+    public void removerEditada() {
+        this.arquivoEditadoId = null;
+        this.auditoria.marcarAtualizacao();
+    }
+
+    public boolean temVersaoEditada() {
+        return arquivoEditadoId != null;
+    }
+
     public boolean estaDisponivel() {
         return status == MidiaStatus.DISPONIVEL;
     }

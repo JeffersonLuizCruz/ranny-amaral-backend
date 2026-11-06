@@ -13,6 +13,8 @@ public enum ArquivoFinalidade {
     COMPROVANTE_PAGAMENTO,
     FOTO_ORIGINAL,
     FOTO_DERIVADO,
+    /** Versao final editada entregue ao cliente (separada do derivado tecnico). */
+    FOTO_EDITADA,
     VIDEO_ORIGINAL,
     CONTRATO_PDF
 }

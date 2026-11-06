@@ -4,13 +4,19 @@ import com.ranny.fotografia.galeria.service.GaleriaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.io.IOException;
 
 /** Rotas publicas de selecao e entrega por token. */
 @RestController
@@ -46,7 +52,21 @@ public class GaleriaPublicaController {
             @PathVariable String token,
             @Valid @RequestBody GaleriaDtos.DownloadRequest request,
             HttpServletRequest http) {
-        return galeriaService.registrarDownload(token, request.midiaId(), ip(http), userAgent(http));
+        return galeriaService.registrarDownload(token, request.midiaId(), request.versao(),
+                ip(http), userAgent(http));
+    }
+
+    @GetMapping("/{token}/download-zip")
+    @Operation(summary = "Baixa os arquivos da entrega em um unico ZIP")
+    public void baixarZip(
+            @PathVariable String token,
+            @RequestParam(required = false, defaultValue = "editada") String versao,
+            HttpServletResponse response) throws IOException {
+        galeriaService.validarZip(token, versao);
+        response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"galeria.zip\"");
+        galeriaService.escreverZip(token, versao, response.getOutputStream());
     }
 
     private static String ip(HttpServletRequest request) {

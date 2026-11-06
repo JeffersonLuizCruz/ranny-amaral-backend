@@ -27,6 +27,8 @@ class ValidadorArquivoSpec extends Specification {
         ArquivoFinalidade.COMPROVANTE_PAGAMENTO | "image/png"
         ArquivoFinalidade.COMPROVANTE_PAGAMENTO | "image/webp"
         ArquivoFinalidade.FOTO_ORIGINAL      | "image/jpeg"
+        ArquivoFinalidade.FOTO_EDITADA       | "image/jpeg"
+        ArquivoFinalidade.FOTO_EDITADA       | "image/png"
         ArquivoFinalidade.VIDEO_ORIGINAL     | "video/mp4"
         ArquivoFinalidade.VIDEO_ORIGINAL     | "video/quicktime"
     }
@@ -44,6 +46,7 @@ class ValidadorArquivoSpec extends Specification {
         finalidade                           | mime
         ArquivoFinalidade.COMPROVANTE_PAGAMENTO | "video/mp4"
         ArquivoFinalidade.FOTO_ORIGINAL      | "application/pdf"
+        ArquivoFinalidade.FOTO_EDITADA       | "video/mp4"
         ArquivoFinalidade.VIDEO_ORIGINAL     | "image/jpeg"
     }
 

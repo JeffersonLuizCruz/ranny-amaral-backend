@@ -148,6 +148,10 @@ class GaleriaControllerSpec extends Specification {
                 .andExpect(status().isOk())
         mockMvc.perform(post("/api/v1/galerias/${galeria.id}/pronta-entrega"))
                 .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${galeria.id}/entrega/liberar-raw")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([por: "Teste"])))
+                .andExpect(status().isOk())
         def entrega = JsonCorpo.mapa(mockMvc.perform(
                 post("/api/v1/galerias/${galeria.id}/entrega/publicar"))
                 .andExpect(status().isOk())
@@ -156,7 +160,7 @@ class GaleriaControllerSpec extends Specification {
         def download = JsonCorpo.mapa(mockMvc.perform(
                 post("/api/v1/public/galerias/${entrega.token}/download")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(JsonCorpo.json([midiaId: midia.id])))
+                        .content(JsonCorpo.json([midiaId: midia.id, versao: "original"])))
                 .andExpect(status().isOk())
                 .andReturn())
 
@@ -171,10 +175,428 @@ class GaleriaControllerSpec extends Specification {
         download.url.startsWith("http://fake-storage/")
     }
 
+    def "envia versao editada de foto selecionada e entrega a versao final"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Versao Editada")
+        def imagemEditada = imagemJpeg(160, 100, Color.RED)
+        storage.simular(imagemEditada.length, "image/jpeg", imagemEditada)
+
+        when:
+        def sessao = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/midias/${preparado.midiaId}/editada/upload")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                nomeArquivo   : "foto-editada.jpg",
+                                mimeType      : "image/jpeg",
+                                tamanho       : imagemEditada.length,
+                                checksumSha256: sha256(imagemEditada)
+                        ])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.estrategia').value("PUT"))
+                .andReturn())
+
+        def editada = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/midias/${preparado.midiaId}/editada/upload/${sessao.arquivoId}/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([partes: []])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
+                .andExpect(status().isOk())
+        def entrega = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        def download = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/public/galerias/${entrega.token}/download")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([midiaId: preparado.midiaId])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        editada.editadaDisponivel
+        editada.status == "disponivel"
+        editada.editadaUrl != null
+        editada.thumbUrl != null
+        download.url.contains("/editadas/")
+        download.nomeArquivo == "foto.jpg"
+    }
+
+    def "rejeita versao editada de midia nao selecionada"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Sem Selecao", true, false)
+        def imagemEditada = imagemJpeg(140, 90, Color.GREEN)
+        storage.simular(imagemEditada.length, "image/jpeg", imagemEditada)
+
+        when:
+        def resultado = mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/midias/${preparado.extraMidiaId}/editada/upload")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                nomeArquivo   : "nao-selecionada.jpg",
+                                mimeType      : "image/jpeg",
+                                tamanho       : imagemEditada.length,
+                                checksumSha256: sha256(imagemEditada)
+                        ])))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "MIDIA_NAO_SELECIONADA"
+    }
+
+    def "rejeita versao editada de video"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Video", false, true)
+
+        when:
+        def resultado = mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/midias/${preparado.videoId}/editada/upload")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                nomeArquivo   : "video.mp4",
+                                mimeType      : "image/jpeg",
+                                tamanho       : 1024,
+                                checksumSha256: "a" * 64
+                        ])))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "EDICAO_APENAS_FOTOS"
+    }
+
+    def "remove versao editada e volta a usar o original"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Remove Edicao")
+        def imagemEditada = imagemJpeg(150, 95, Color.ORANGE)
+        storage.simular(imagemEditada.length, "image/jpeg", imagemEditada)
+        def sessao = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/midias/${preparado.midiaId}/editada/upload")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                nomeArquivo   : "editada.jpg",
+                                mimeType      : "image/jpeg",
+                                tamanho       : imagemEditada.length,
+                                checksumSha256: sha256(imagemEditada)
+                        ])))
+                .andExpect(status().isOk())
+                .andReturn())
+        mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/midias/${preparado.midiaId}/editada/upload/${sessao.arquivoId}/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([partes: []])))
+                .andExpect(status().isOk())
+
+        when:
+        mockMvc.perform(delete(
+                "/api/v1/galerias/${preparado.galeriaId}/midias/${preparado.midiaId}/editada"))
+                .andExpect(status().isOk())
+
+        def midia = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}/midias"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        !midia.itens[0].editadaDisponivel
+        midia.itens[0].editadaUrl == null
+    }
+
+    def "nao publica entrega sem versao editada e sem raw liberado"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Sem Entrega")
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
+                .andExpect(status().isOk())
+
+        when:
+        def resultado = mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "FOTOS_SEM_ENTREGA"
+    }
+
+    def "libera raw e entrega o arquivo original"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Raw")
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
+                .andExpect(status().isOk())
+
+        when:
+        def liberada = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/liberar-raw")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([por: "Ranny"])))
+                .andExpect(status().isOk())
+                .andReturn())
+        def entrega = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def download = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/public/galerias/${entrega.token}/download")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([midiaId: preparado.midiaId, versao: "original"])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        liberada.rawLiberado
+        liberada.rawLiberadoPor == "Ranny"
+        download.url.contains("/midias/")
+        !download.url.contains("/editadas/")
+    }
+
+    def "bloqueia download original quando raw nao foi liberado"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Raw Bloqueado")
+        enviarVersaoEditada(preparado)
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
+                .andExpect(status().isOk())
+        def entrega = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        when:
+        def resultado = mockMvc.perform(
+                post("/api/v1/public/galerias/${entrega.token}/download")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([midiaId: preparado.midiaId, versao: "original"])))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "RAW_NAO_LIBERADO"
+    }
+
+    def "nao revoga raw com foto selecionada sem edicao"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Raw Em Uso")
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/liberar-raw"))
+                .andExpect(status().isOk())
+
+        when:
+        def resultado = mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/revogar-raw"))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "RAW_EM_USO"
+    }
+
+    def "revoga raw quando todas as fotos tem versao editada"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Revoga Raw")
+        enviarVersaoEditada(preparado, Color.CYAN)
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/liberar-raw"))
+                .andExpect(status().isOk())
+
+        when:
+        def resultado = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/revogar-raw"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        !resultado.rawLiberado
+        resultado.rawLiberadoEm == null
+        resultado.rawLiberadoPor == null
+    }
+
+    private Map prepararGaleriaComSelecao(String nomeCliente, boolean comExtra = false,
+                                          boolean comVideo = false) {
+        def cliente = Cenario.cliente(clienteRepository, nomeCliente)
+        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), StatusAgendamento.REALIZADO)
+        agendamento.atualizarPagamentoEntrada(
+                new BigDecimal("300.00"), new BigDecimal("30.00"),
+                PagamentoEntrada.confirmada(new BigDecimal("300.00"), new BigDecimal("30.00"),
+                        Instant.now(), "Teste"))
+        agendamento.atualizarPagamentoFinal(
+                PagamentoSaldo.recebido(new BigDecimal("700.00"), FormaPagamentoSaldo.PIX,
+                        Instant.now(), "Teste"))
+        agendamentoRepository.saveAndFlush(agendamento)
+
+        def galeria = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/galerias")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([agendamentoId: agendamento.id])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        def midiaId = enviarFoto(galeria.id, "foto.jpg", imagemJpeg())
+        String extraMidiaId = null
+        if (comExtra) {
+            extraMidiaId = enviarFoto(galeria.id, "extra.jpg",
+                    imagemJpeg(100, 100, Color.MAGENTA))
+        }
+        String videoId = null
+        if (comVideo) {
+            videoId = enviarVideo(galeria.id, "video.mp4", "0000ftypisom-video".bytes)
+        }
+
+        def link = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${galeria.id}/selecao/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+        mockMvc.perform(post("/api/v1/public/galerias/${link.token}/selecao")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([fotoIds: [midiaId], videoIds: []])))
+                .andExpect(status().isOk())
+
+        return [galeriaId: galeria.id, midiaId: midiaId,
+                extraMidiaId: extraMidiaId, videoId: videoId]
+    }
+
+    def "baixa zip com versoes editadas e originais"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente ZIP")
+        enviarVersaoEditada(preparado, Color.PINK)
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/liberar-raw"))
+                .andExpect(status().isOk())
+        def entrega = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        when:
+        def zipEditado = mockMvc.perform(
+                get("/api/v1/public/galerias/${entrega.token}/download-zip")
+                        .param("versao", "editada"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("galeria.zip")))
+                .andReturn()
+
+        def zipOriginal = mockMvc.perform(
+                get("/api/v1/public/galerias/${entrega.token}/download-zip")
+                        .param("versao", "original"))
+                .andExpect(status().isOk())
+                .andReturn()
+
+        then:
+        def bytesEditado = zipEditado.response.contentAsByteArray
+        bytesEditado.length > 0
+        bytesEditado[0] == (byte) 0x50
+        bytesEditado[1] == (byte) 0x4B
+        zipOriginal.response.contentAsByteArray.length > 0
+    }
+
+    def "nao baixa zip original sem liberar raw"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente ZIP Bloqueado")
+        enviarVersaoEditada(preparado, Color.YELLOW)
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
+                .andExpect(status().isOk())
+        def entrega = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        when:
+        def resultado = mockMvc.perform(
+                get("/api/v1/public/galerias/${entrega.token}/download-zip")
+                        .param("versao", "original"))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "RAW_NAO_LIBERADO"
+    }
+
+    private void enviarVersaoEditada(Map preparado, Color cor = Color.RED) {
+        def imagem = imagemJpeg(150, 95, cor)
+        storage.simular(imagem.length, "image/jpeg", imagem)
+        def sessao = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/midias/${preparado.midiaId}/editada/upload")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                nomeArquivo   : "editada.jpg",
+                                mimeType      : "image/jpeg",
+                                tamanho       : imagem.length,
+                                checksumSha256: sha256(imagem)
+                        ])))
+                .andExpect(status().isOk())
+                .andReturn())
+        mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/midias/${preparado.midiaId}/editada/upload/${sessao.arquivoId}/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([partes: []])))
+                .andExpect(status().isOk())
+    }
+
+    private String enviarFoto(String galeriaId, String nome, byte[] imagem) {
+        storage.simular(imagem.length, "image/jpeg", imagem)
+        def sessao = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/galerias/${galeriaId}/midias/upload")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        nomeArquivo   : nome,
+                        mimeType      : "image/jpeg",
+                        tamanho       : imagem.length,
+                        checksumSha256: sha256(imagem),
+                        tipo          : "foto"
+                ])))
+                .andExpect(status().isOk())
+                .andReturn())
+        return JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${galeriaId}/midias/upload/${sessao.arquivoId}/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([partes: [], tipo: "foto"])))
+                .andExpect(status().isOk())
+                .andReturn()).id
+    }
+
+    private String enviarVideo(String galeriaId, String nome, byte[] video) {
+        storage.simular(video.length, "video/mp4", video)
+        def sessao = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/galerias/${galeriaId}/midias/upload")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        nomeArquivo   : nome,
+                        mimeType      : "video/mp4",
+                        tamanho       : video.length,
+                        checksumSha256: sha256(video),
+                        tipo          : "video"
+                ])))
+                .andExpect(status().isOk())
+                .andReturn())
+        return JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${galeriaId}/midias/upload/${sessao.arquivoId}/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([partes: [], tipo: "video"])))
+                .andExpect(status().isOk())
+                .andReturn()).id
+    }
+
     private static byte[] imagemJpeg() {
-        def imagem = new BufferedImage(120, 80, BufferedImage.TYPE_INT_RGB)
+        return imagemJpeg(120, 80, Color.BLUE)
+    }
+
+    private static byte[] imagemJpeg(int largura, int altura, Color cor) {
+        def imagem = new BufferedImage(largura, altura, BufferedImage.TYPE_INT_RGB)
         def graphics = imagem.createGraphics()
-        graphics.setColor(Color.BLUE)
+        graphics.setColor(cor)
         graphics.fillRect(0, 0, imagem.width, imagem.height)
         graphics.dispose()
         def saida = new ByteArrayOutputStream()
