@@ -1,0 +1,12 @@
+target/
+data/
+logs/
+uploads/
+.idea/
+.DS_Store
+*.iml
+*.log
+
+# Ferramentas locais
+.env
+.env.local

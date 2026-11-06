@@ -1,0 +1,30 @@
+# Espelho local do ambiente de desenvolvimento: PostgreSQL + Flyway.
+#
+# Uso:
+#   docker compose -f docker-compose.dev.yml up -d
+#   ./mvnw spring-boot:run
+#   docker compose -f docker-compose.dev.yml down
+#
+# O backend roda fora do container apontando para localhost:5432.
+# O schema é criado pelas migrações em src/main/resources/db/migration.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: fotografia-dev-postgres
+    environment:
+      POSTGRES_DB: photoizer
+      POSTGRES_USER: photoizer
+      POSTGRES_PASSWORD: photoizer
+    ports:
+      - "5432:5432"
+    volumes:
+      - fotografia-dev-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U photoizer -d photoizer"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  fotografia-dev-pgdata:
