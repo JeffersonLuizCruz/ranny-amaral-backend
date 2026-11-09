@@ -6,6 +6,7 @@ import com.ranny.fotografia.arquivo.storage.FakeObjectStorage
 import com.ranny.fotografia.cliente.repository.ClienteRepository
 import com.ranny.fotografia.galeria.model.MidiaStatus
 import com.ranny.fotografia.galeria.model.MidiaTipo
+import com.ranny.fotografia.galeria.repository.DownloadGaleriaRepository
 import com.ranny.fotografia.galeria.repository.MidiaGaleriaRepository
 import com.ranny.fotografia.pacote.repository.PacoteRepository
 import com.ranny.fotografia.shared.model.FormaPagamentoSaldo
@@ -55,6 +56,9 @@ class GaleriaControllerSpec extends Specification {
 
     @Autowired
     MidiaGaleriaRepository midiaRepository
+
+    @Autowired
+    DownloadGaleriaRepository downloadRepository
 
     def "nao publica selecao de ensaio nao realizado"() {
         given:
@@ -447,6 +451,119 @@ class GaleriaControllerSpec extends Specification {
         !resultado.rawLiberado
         resultado.rawLiberadoEm == null
         resultado.rawLiberadoPor == null
+    }
+
+    def "nao expoe original no payload publico sem liberar raw"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Payload Sem Raw")
+        enviarVersaoEditada(preparado)
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
+                .andExpect(status().isOk())
+        def entrega = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        when:
+        def publica = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/public/galerias/${entrega.token}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        publica.midias[0].originalUrl == null
+        publica.midias[0].editadaUrl != null
+    }
+
+    def "expoe original no payload publico apos liberar raw"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Payload Com Raw")
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/liberar-raw"))
+                .andExpect(status().isOk())
+        def entrega = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        when:
+        def publica = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/public/galerias/${entrega.token}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        publica.midias[0].originalUrl != null
+    }
+
+    def "nao republica selecao depois do envio"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Republicar")
+
+        when:
+        def resultado = mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/selecao/publicar"))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "SELECAO_NAO_PUBLICAVEL"
+    }
+
+    def "nao reabre selecao apos a entrega"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Reabrir Entrega")
+        enviarVersaoEditada(preparado)
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andExpect(status().isOk())
+
+        when:
+        def resultado = mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/selecao/reabrir"))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "SELECAO_NAO_REABRIVEL"
+    }
+
+    def "zip registra downloads por arquivo"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente ZIP Registro")
+        enviarVersaoEditada(preparado, Color.MAGENTA)
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/liberar-raw"))
+                .andExpect(status().isOk())
+        def entrega = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        when:
+        def validacao = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/public/galerias/${entrega.token}/download-zip/validar")
+                        .param("versao", "editada"))
+                .andExpect(status().isOk())
+                .andReturn())
+        mockMvc.perform(get("/api/v1/public/galerias/${entrega.token}/download-zip")
+                .param("versao", "editada"))
+                .andExpect(status().isOk())
+
+        then:
+        validacao.quantidade == 1
+        downloadRepository.count() == 1
     }
 
     private Map prepararGaleriaComSelecao(String nomeCliente, boolean comExtra = false,

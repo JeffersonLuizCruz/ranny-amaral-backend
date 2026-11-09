@@ -22,7 +22,7 @@ public interface ObjectStorage {
 
     String urlPut(String objectKey, String mimeType, Duration validade);
 
-    String urlGet(String objectKey, Duration validade);
+    String urlGet(String objectKey, String nomeArquivo, Duration validade);
 
     byte[] ler(String objectKey);
 

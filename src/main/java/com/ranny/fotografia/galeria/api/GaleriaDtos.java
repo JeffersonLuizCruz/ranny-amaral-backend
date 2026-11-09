@@ -301,4 +301,8 @@ public final class GaleriaDtos {
 
     public record DownloadResponse(String url, Instant expiraEm, String nomeArquivo) {
     }
+
+    /** Validacao do ZIP antes de iniciar o streaming; evita baixar JSON de erro. */
+    public record ZipValidacaoResponse(int quantidade) {
+    }
 }

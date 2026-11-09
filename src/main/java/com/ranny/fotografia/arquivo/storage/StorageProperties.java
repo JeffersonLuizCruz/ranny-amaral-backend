@@ -28,5 +28,7 @@ public class StorageProperties {
     private long multipartThresholdBytes = 5L * 1024 * 1024;
     private int partSizeBytes = 8 * 1024 * 1024;
     private int presignSeconds = 600;
+    /** Downloads podem ficar abertos por mais tempo que o upload. */
+    private int presignDownloadSeconds = 3600;
     private long maxComprovanteBytes = 10L * 1024 * 1024;
 }

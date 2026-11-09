@@ -213,6 +213,7 @@ app.storage.endpoint=http://localhost:3900
 app.storage.public-endpoint=http://localhost:3900
 app.storage.bucket=crm-originais
 app.storage.presign-seconds=600
+app.storage.presign-download-seconds=3600
 app.storage.max-comprovante-bytes=10485760
 ```
 
@@ -223,10 +224,13 @@ bucket. O download do staff agora é protegido pelo JWT.
 ## Galerias
 
 - Fotos até **50 MB** e vídeos até **500 MB**.
-- Upload direto ao Garage/S3 com progresso, retomada e deduplicação.
+- Upload direto ao Garage/S3 com progresso e deduplicação (retomada após reload ainda pendente — DT-006).
 - Fotos geram derivados `thumb-400` e `web-1600` via processamento de imagem.
 - Vídeos são armazenados e entregues como original nesta fase.
 - Seleção pública por token de 30 dias; entrega por token de 90 dias.
+- O payload público só expõe a URL do original quando o RAW foi liberado; downloads individuais e ZIP
+  passam pelo endpoint que valida o gate e registra o evento.
+- `GET /api/v1/public/galerias/{token}/download-zip/validar` valida o lote antes do streaming.
 - Regras:
   - ensaio realizado e pagamentos quitados para publicar a seleção;
   - fotos selecionadas ≥ fotos inclusas;

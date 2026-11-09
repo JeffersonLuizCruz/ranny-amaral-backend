@@ -114,7 +114,7 @@ public class S3ObjectStorage implements ObjectStorage {
     }
 
     @Override
-    public String urlGet(String objectKey, Duration validade) {
+    public String urlGet(String objectKey, String nomeArquivo, Duration validade) {
         try {
             PresignedGetObjectRequest request = presigner.presignGetObject(
                     GetObjectPresignRequest.builder()
@@ -122,12 +122,23 @@ public class S3ObjectStorage implements ObjectStorage {
                             .getObjectRequest(GetObjectRequest.builder()
                                     .bucket(properties.getBucket())
                                     .key(objectKey)
+                                    .responseContentDisposition(contentDisposition(nomeArquivo))
                                     .build())
                             .build());
             return request.url().toString();
         } catch (SdkException ex) {
             throw new ArmazenamentoException("Falha ao assinar download.", ex);
         }
+    }
+
+    private static String contentDisposition(String nomeArquivo) {
+        String nome = nomeArquivo == null || nomeArquivo.isBlank()
+                ? "arquivo" : nomeArquivo;
+        String limpo = nome.replace("\\", "_")
+                .replace("\"", "_")
+                .replace("\r", "_")
+                .replace("\n", "_");
+        return "attachment; filename=\"" + limpo + "\"";
     }
 
     @Override

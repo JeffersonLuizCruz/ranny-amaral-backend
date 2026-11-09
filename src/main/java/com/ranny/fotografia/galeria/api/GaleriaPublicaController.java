@@ -56,13 +56,22 @@ public class GaleriaPublicaController {
                 ip(http), userAgent(http));
     }
 
+    @GetMapping("/{token}/download-zip/validar")
+    @Operation(summary = "Valida o ZIP antes de iniciar o streaming")
+    public GaleriaDtos.ZipValidacaoResponse validarZip(
+            @PathVariable String token,
+            @RequestParam(required = false, defaultValue = "editada") String versao) {
+        return new GaleriaDtos.ZipValidacaoResponse(galeriaService.validarZip(token, versao));
+    }
+
     @GetMapping("/{token}/download-zip")
     @Operation(summary = "Baixa os arquivos da entrega em um unico ZIP")
     public void baixarZip(
             @PathVariable String token,
             @RequestParam(required = false, defaultValue = "editada") String versao,
+            HttpServletRequest http,
             HttpServletResponse response) throws IOException {
-        galeriaService.validarZip(token, versao);
+        galeriaService.registrarDownloadsZip(token, versao, ip(http), userAgent(http));
         response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
                 "attachment; filename=\"galeria.zip\"");

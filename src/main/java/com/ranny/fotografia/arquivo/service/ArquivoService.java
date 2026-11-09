@@ -237,8 +237,9 @@ public class ArquivoService implements ArquivoUpload {
         if (!arquivo.estaDisponivel()) {
             throw new RecursoNaoEncontradoException("Arquivo", arquivoId);
         }
-        Duration validade = Duration.ofSeconds(properties.getPresignSeconds());
-        return new UrlDownload(storage.urlGet(arquivo.getObjectKey(), validade),
+        Duration validade = Duration.ofSeconds(properties.getPresignDownloadSeconds());
+        return new UrlDownload(storage.urlGet(arquivo.getObjectKey(),
+                        arquivo.getNomeOriginal(), validade),
                 Instant.now().plus(validade));
     }
 

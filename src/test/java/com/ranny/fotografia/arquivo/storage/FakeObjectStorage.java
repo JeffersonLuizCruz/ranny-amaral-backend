@@ -67,8 +67,9 @@ public class FakeObjectStorage implements ObjectStorage {
     }
 
     @Override
-    public String urlGet(String objectKey, Duration validade) {
-        return "http://fake-storage/%s?op=get".formatted(objectKey);
+    public String urlGet(String objectKey, String nomeArquivo, Duration validade) {
+        return "http://fake-storage/%s?op=get&filename=%s"
+                .formatted(objectKey, nomeArquivo == null ? "arquivo" : nomeArquivo);
     }
 
     @Override

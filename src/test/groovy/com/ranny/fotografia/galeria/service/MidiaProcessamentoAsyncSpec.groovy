@@ -42,6 +42,9 @@ class MidiaProcessamentoAsyncSpec extends Specification {
     ApplicationEventPublisher eventos
 
     @Autowired
+    GaleriaService galeriaService
+
+    @Autowired
     PlatformTransactionManager transactionManager
 
     def "processa derivados em background depois do commit"() {
@@ -75,6 +78,34 @@ class MidiaProcessamentoAsyncSpec extends Specification {
         processada.status == MidiaStatus.DISPONIVEL
         processada.largura != null
         !derivadoRepository.findByMidiaId(midia.id).isEmpty()
+    }
+
+    def "nao ressuscita midia removida quando o processamento atrasa"() {
+        given:
+        def imagem = imagemJpeg()
+        def galeria = galeriaRepository.save(Galeria.criar(
+                "estudio", "agendamento-removida", null, "cliente-removida",
+                "Cliente Removida", 1, 0, BigDecimal.ZERO))
+        def arquivo = arquivoUpload.salvarDisponivel(
+                new ArquivoUpload.IniciarArquivo(
+                        ArquivoFinalidade.FOTO_ORIGINAL,
+                        galeria.id,
+                        "testes/removida",
+                        "foto.jpg",
+                        "image/jpeg"),
+                imagem)
+        def midia = midiaRepository.save(MidiaGaleria.criar(
+                galeria.id, MidiaTipo.FOTO, arquivo.id(), "foto.jpg",
+                "image/jpeg", imagem.length, 1))
+        midia.remover()
+        midiaRepository.saveAndFlush(midia)
+
+        when:
+        galeriaService.processarMidiaSolicitada(
+                galeria.id, midia.id, arquivo.id(), false)
+
+        then:
+        midiaRepository.findById(midia.id).get().status == MidiaStatus.REMOVIDA
     }
 
     private MidiaGaleria aguardarProcessamento(String midiaId) {

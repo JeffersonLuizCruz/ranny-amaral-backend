@@ -357,6 +357,11 @@ public class GaleriaService implements GaleriaConsulta {
                                          String arquivoId, boolean editada) {
         Galeria galeria = obter(galeriaId);
         MidiaGaleria midia = midiaDaGaleria(galeriaId, midiaId);
+        // O processamento assincrono pode chegar depois de uma remocao; nesse
+        // caso nao pode "ressuscitar" a midia chamando disponivel().
+        if (midia.getStatus() == MidiaStatus.REMOVIDA) {
+            return;
+        }
         if (editada) {
             if (!arquivoId.equals(midia.getArquivoEditadoId())) {
                 return;
@@ -394,6 +399,14 @@ public class GaleriaService implements GaleriaConsulta {
     @Transactional
     public GaleriaDtos.LinkResponse publicarSelecao(String galeriaId) {
         Galeria galeria = obter(galeriaId);
+        if (galeria.getStatus() == GaleriaStatus.SELECAO_ENVIADA
+                || galeria.getStatus() == GaleriaStatus.EM_EDICAO
+                || galeria.getStatus() == GaleriaStatus.PRONTA_ENTREGA
+                || galeria.getStatus() == GaleriaStatus.ENTREGUE
+                || galeria.getStatus() == GaleriaStatus.CANCELADA) {
+            throw new RegraDeNegocioException("SELECAO_NAO_PUBLICAVEL",
+                    "A selecao so pode ser publicada antes do envio ou para renovar o link em selecao.");
+        }
         validarGateSelecao(galeria);
         LinkGaleria link = linkRepository
                 .findFirstByGaleriaIdAndTipoAndStatusOrderByExpiraEmDesc(
@@ -413,6 +426,14 @@ public class GaleriaService implements GaleriaConsulta {
     @Transactional
     public GaleriaDtos.LinkResponse reabrirSelecao(String galeriaId) {
         Galeria galeria = obter(galeriaId);
+        // Reabrir depois da entrega publicada derrubaria um link ativo e
+        // deixaria a galeria em EM_SELECAO sem uma entrega valida. A mudanca de
+        // estado precisa ser explicita (revogar entrega antes).
+        if (galeria.getStatus() == GaleriaStatus.ENTREGUE
+                || galeria.getStatus() == GaleriaStatus.CANCELADA) {
+            throw new RegraDeNegocioException("SELECAO_NAO_REABRIVEL",
+                    "Nao e possivel reabrir a selecao apos a entrega ser publicada.");
+        }
         PedidoExtras extras = extrasRepository
                 .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeriaId).orElse(null);
         if (extras != null && extras.getStatus() == PedidoExtrasStatus.PAGO) {
@@ -656,11 +677,16 @@ public class GaleriaService implements GaleriaConsulta {
                 .findFirstByGaleriaIdOrderByEnviadaEmDesc(galeria.getId()).orElse(null);
         PedidoExtras extras = extrasRepository
                 .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeria.getId()).orElse(null);
+        // O original so pode aparecer no payload publico quando o RAW foi
+        // liberado explicitamente. A URL do download continua sendo gerada sob
+        // demanda pelo endpoint que valida o gate e registra o evento.
+        boolean exporOriginal = link.getTipo() == LinkGaleriaTipo.ENTREGA
+                && galeria.isRawLiberado();
         return new GaleriaDtos.GaleriaPublicaResponse(
                 GaleriaDtos.LinkResponse.de(link),
                 response(galeria),
                 midias.stream().map(midia -> midiaResponse(midia, galeria.getId(),
-                        link.getTipo() == LinkGaleriaTipo.ENTREGA)).toList(),
+                        exporOriginal)).toList(),
                 selecao == null ? null : selecaoResponse(selecao),
                 extras == null ? null : GaleriaDtos.PedidoExtrasResponse.de(extras),
                 link.getTipo() == LinkGaleriaTipo.ENTREGA
@@ -771,6 +797,28 @@ public class GaleriaService implements GaleriaConsulta {
     }
 
     /**
+     * Valida e registra o download em lote.
+     *
+     * <p>O ZIP e streaming; registrar antes de escrever garante que o evento
+     * apareca no historico mesmo se o cliente interromper a conexao no meio.
+     */
+    @Transactional
+    public int registrarDownloadsZip(String token, String versao, String ip, String userAgent) {
+        LinkGaleria link = linkAtivo(token, LinkGaleriaTipo.ENTREGA);
+        Galeria galeria = obter(link.getGaleriaId());
+        List<EntradaZip> entradas = entradasZip(token, versao);
+        for (EntradaZip entrada : entradas) {
+            downloadRepository.save(DownloadGaleria.criar(
+                    entrada.galeriaId(), link.getId(), entrada.midiaId(),
+                    entrada.arquivoId(), entrada.versao(), ip, userAgent));
+        }
+        evento(galeria, EventoGaleriaTipo.DOWNLOAD_REGISTRADO,
+                "%d arquivo(s) baixados em lote (%s)."
+                        .formatted(entradas.size(), versao));
+        return entradas.size();
+    }
+
+    /**
      * Escreve o ZIP diretamente na resposta, sem carregar a galeria em memoria.
      *
      * <p>PATTERN: Streaming / Pipeline. Cada arquivo e lido do storage por stream
@@ -843,8 +891,10 @@ public class GaleriaService implements GaleriaConsulta {
                 throw new RegraDeNegocioException("ZIP_MUITO_GRANDE",
                         "A galeria excede o limite de 2 GB para download em lote.");
             }
-            entradas.add(new EntradaZip(galeria.getId(), arquivoId, finalidade,
-                    midia.getNomeOriginal()));
+            String versaoDownload = midia.getTipo() == MidiaTipo.VIDEO || original
+                    ? "ORIGINAL" : "EDITADA";
+            entradas.add(new EntradaZip(galeria.getId(), midia.getId(), arquivoId,
+                    finalidade, midia.getNomeOriginal(), versaoDownload));
         }
         if (entradas.isEmpty()) {
             throw new RegraDeNegocioException("ZIP_SEM_ARQUIVOS",
@@ -870,8 +920,8 @@ public class GaleriaService implements GaleriaConsulta {
         return candidato;
     }
 
-    private record EntradaZip(String galeriaId, String arquivoId,
-                              ArquivoFinalidade finalidade, String nome) {
+    private record EntradaZip(String galeriaId, String midiaId, String arquivoId,
+                              ArquivoFinalidade finalidade, String nome, String versao) {
     }
 
     private void processarMidia(MidiaGaleria midia, Galeria galeria) {
