@@ -28,7 +28,7 @@ import java.time.Instant;
  * e para seus derivados.
  *
  * <p>Os bytes nunca passam pelo banco nem pelo processo Java: o navegador
- * envia direto ao MinIO/S3 por URL pre-assinada.
+ * envia direto ao Garage/S3 por URL pre-assinada.
  */
 @Entity
 @Table(name = "arquivos")

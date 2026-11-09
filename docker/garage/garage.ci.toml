@@ -1,0 +1,26 @@
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+
+replication_factor = 1
+consistency_mode = "consistent"
+
+metadata_fsync = false
+data_fsync = false
+block_size = "10M"
+compression_level = "none"
+
+rpc_bind_addr = "[::]:3901"
+rpc_secret_file = "env:GARAGE_RPC_SECRET"
+bootstrap_peers = []
+
+[s3_api]
+s3_region = "us-east-1"
+api_bind_addr = "[::]:3900"
+public_endpoint = "http://localhost:3900"
+public_endpoint_path_style = true
+
+[admin]
+api_bind_addr = "[::]:3903"
+admin_token_file = "env:GARAGE_ADMIN_TOKEN"
+metrics_token_file = "env:GARAGE_METRICS_TOKEN"

@@ -1,12 +1,13 @@
-# Espelho local do ambiente de desenvolvimento: PostgreSQL + Flyway + MinIO.
+# Ambiente local de desenvolvimento: PostgreSQL + Garage (S3).
 #
 # Uso:
+#   cp .env.example .env
 #   docker compose -f docker-compose.dev.yml up -d
 #   ./mvnw spring-boot:run
 #   docker compose -f docker-compose.dev.yml down
 #
 # O backend roda fora do container apontando para localhost:5432 e
-# localhost:9000. Em producao, MinIO e PostgreSQL usam volumes persistentes.
+# localhost:3900. Em producao, use Coolify com volumes persistentes.
 
 services:
   postgres:
@@ -26,35 +27,56 @@ services:
       timeout: 5s
       retries: 10
 
-  minio:
-    image: minio/minio:latest
-    container_name: fotografia-dev-minio
-    command: server /data --console-address ":9001"
+  garage:
+    image: dxflrs/garage:v2.5.0
+    container_name: fotografia-dev-garage
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      GARAGE_CONFIG_FILE: /etc/garage.toml
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN:-dev-admin-token}
+      GARAGE_METRICS_TOKEN: ${GARAGE_METRICS_TOKEN:-dev-metrics-token}
+      GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_DEFAULT_ACCESS_KEY:-GK00000000000000000000000000000000}
+      GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_DEFAULT_SECRET_KEY:-fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210}
+      GARAGE_DEFAULT_BUCKET: crm-originais
+      RUST_LOG: garage=info
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:3900:3900"
+      - "127.0.0.1:3903:3903"
     volumes:
-      - fotografia-dev-minio-data:/data
+      - ./docker/garage/garage.dev.toml:/etc/garage.toml:ro
+      - fotografia-dev-garage-meta:/var/lib/garage/meta
+      - fotografia-dev-garage-data:/var/lib/garage/data
+    healthcheck:
+      test: ["CMD", "/garage", "stats", "-a"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
-  minio-init:
-    image: minio/mc:latest
-    container_name: fotografia-dev-minio-init
+  garage-init:
+    image: amazon/aws-cli:2.17.0
+    container_name: fotografia-dev-garage-init
     depends_on:
-      - minio
+      garage:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${GARAGE_DEFAULT_ACCESS_KEY:-GK00000000000000000000000000000000}
+      AWS_SECRET_ACCESS_KEY: ${GARAGE_DEFAULT_SECRET_KEY:-fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://garage:3900
     volumes:
-      - ./docker/minio/cors.json:/config/cors.json:ro
-    entrypoint: >
-      /bin/sh -c "
-      until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 2; done;
-      mc mb --ignore-existing local/crm-originais;
-      mc anonymous set none local/crm-originais;
-      mc cors set local/crm-originais /config/cors.json;
-      echo 'MinIO pronto: bucket crm-originais e CORS configurados.';
-      "
+      - ./docker/garage/cors.dev.json:/config/cors.json:ro
+      - ./docker/garage/lifecycle.json:/config/lifecycle.json:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until aws s3api head-bucket --bucket crm-originais 2>/dev/null; do sleep 1; done
+        aws s3api put-bucket-cors --bucket crm-originais --cors-configuration file:///config/cors.json
+        aws s3api put-bucket-lifecycle-configuration --bucket crm-originais --lifecycle-configuration file:///config/lifecycle.json
+        echo "Garage pronto: bucket crm-originais, CORS e lifecycle configurados."
+    restart: "no"
 
 volumes:
   fotografia-dev-pgdata:
-  fotografia-dev-minio-data:
+  fotografia-dev-garage-meta:
+  fotografia-dev-garage-data:

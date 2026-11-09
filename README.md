@@ -2,13 +2,13 @@
 
 API REST do CRM de estúdio fotográfico, construída com **Java 25**, **Spring Boot 4.1.2**, **Spring Modulith 2.1.1**, **Spring Data JPA**, **PostgreSQL 16** e **Flyway**.
 
-O núcleo cobre **clientes, pacotes, agenda, contratos, galerias e financeiro** (incluindo modelos, configuração do estúdio, aceite público, paginação/busca e upload de mídia). Autenticação fica para a próxima fase.
+O núcleo cobre **clientes, pacotes, agenda, contratos, galerias e financeiro** (incluindo modelos, configuração do estúdio, aceite público, paginação/busca e upload de mídia), com **autenticação JWT e gestão de usuários**. O storage é o **Garage** (S3 compatível).
 
 ## Requisitos
 
 - Java 25 (`java -version`)
 - Maven 3.9+ (o wrapper já está configurado: `./mvnw`)
-- Docker + Docker Compose para PostgreSQL e MinIO local
+- Docker + Docker Compose para PostgreSQL e Garage local
 
 ## Como rodar
 
@@ -22,9 +22,10 @@ docker compose -f docker-compose.dev.yml up -d
 - OpenAPI: `http://localhost:8080/v3/api-docs`
 - PostgreSQL: `localhost:5432`, banco/usuário/senha `photoizer`
   - inspeção: `docker compose -f docker-compose.dev.yml exec postgres psql -U photoizer -d photoizer`
-- MinIO: `http://localhost:9000` (console `http://localhost:9001`)
+- Garage (S3): `http://localhost:3900` (admin `http://localhost:3903`, não expor)
   - bucket: `crm-originais`
-  - usuário/senha: `minioadmin`
+  - credenciais padrão de dev: `GK00000000000000000000000000000000` / `fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210`
+- Admin local: `admin@rannyamaral.com.br` / `admin12345` (troca obrigatória no primeiro acesso)
 
 O Flyway aplica as migrações no primeiro boot e o Hibernate roda com `ddl-auto=validate`. O perfil `dev` popula dados de demonstração (`app.seed.enabled=true`) com os mesmos IDs do frontend (`cli-marina`, `pkg-gestante`, `apt-001`, `ct-001`, etc.). O seed só roda quando as tabelas estão vazias.
 
@@ -38,7 +39,7 @@ Para apontar para outro banco, use `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_U
 ./mvnw test                       # H2 + Spock (rápido)
 ./mvnw -Dtest='*Spec' test        # somente Spock
 ./mvnw verify                     # H2 + PostgresSchemaIT (requer Postgres)
-MINIO_TEST_ENDPOINT=http://localhost:9000 ./mvnw verify  # inclui MinioStorageIT
+S3_TEST_ENDPOINT=http://localhost:3900 ./mvnw verify  # inclui o IT de storage (Garage)
 ```
 
 Os testes rápidos usam **H2 em memória**, `create-drop`, Flyway desabilitado e `app.seed.enabled=false` (`src/test/resources/application.properties`). O `PostgresSchemaIT` roda no `verify` com o perfil `postgres`, aplica as migrações Flyway e valida o schema real com `ddl-auto=validate` (use `POSTGRES_TEST_URL`/`POSTGRES_TEST_USERNAME`/`POSTGRES_TEST_PASSWORD` para apontar o banco).
@@ -47,18 +48,20 @@ A suíte cobre:
 
 - CRUD e validações de clientes, pacotes e agenda;
 - paginação, ordenação estável, busca textual e validação de parâmetros;
-- upload de comprovante com validação de tipo/tamanho, multipart e MinIO real (quando `MINIO_TEST_ENDPOINT` está definido);
+- upload de comprovante com validação de tipo/tamanho, multipart e Garage real (quando `S3_TEST_ENDPOINT` está definido);
 - upload de fotos/vídeos, versão final editada, derivados, seleção, extras, liberação de RAW e entrega (ZIP streaming);
 - processamento assíncrono de derivados com polling no frontend;
 - financeiro mensal com precedência de contrato, extras e exclusões;
 - dashboard operacional com agenda, contratos, galerias e financeiro;
-- migração incremental `V1 → V5` com backfill de dados existentes (`PostgresMigrationIT`);
+- migração incremental `V1 → V6` com backfill de dados existentes (`PostgresMigrationIT`);
 - congelamento das condições comerciais do pacote;
 - numeração de contratos (`CT-AAAA-0001`) e protocolos de aceite (`ACE-AAAA-0001`);
 - ciclo de vida do link público (geração, visualização, aceite, expiração e cancelamento);
 - pagamentos de entrada/saldo;
 - sincronização contrato → agenda por eventos duráveis (`@ApplicationModuleListener`);
 - concorrência otimista (`@Version`) e conflito de atualização;
+- filtro de borda (payload, headers, content-type, scanning e IP);
+- contrato de erro RFC 7807/9457 (`ProblemDetail`);
 - verificação das fronteiras dos módulos (`ApplicationModules.verify()`).
 
 ## Arquitetura
@@ -66,6 +69,7 @@ A suíte cobre:
 ```
 com.ranny.fotografia
 ├── shared/      Shared Kernel: auditoria, pagamentos, JSON, erros, eventos e portas
+├── auth/        Usuários, login, refresh, senhas, auditoria e segurança
 ├── cliente/     Cadastro de clientes (API pública ClienteConsulta)
 ├── pacote/      Catálogo de pacotes (API pública PacoteConsulta)
 ├── agenda/      Agendamentos, pagamentos e congelamento de condições
@@ -82,7 +86,7 @@ com.ranny.fotografia
 - Entidades usam **composição** (`Auditoria`, `PagamentoEntrada`, `PagamentoSaldo`, `CondicoesPacote`), sem herança de entidades e sem `@Data`.
 - Documentos grandes e imutáveis (`snapshot`, `cláusulas`, `histórico`, `aceite`) são persistidos como JSON em colunas `TEXT` via `AttributeConverter`.
 - Valores consultáveis (status, número, valores) ficam em colunas relacionais.
-- Erros seguem um único contrato (`ErrorResponse`) com 400/404/409/410/422/500. Conflitos de concorrência retornam `409 CONFLITO_CONCORRENCIA`.
+- Erros seguem um único contrato RFC 7807/9457 (`ProblemDetail`) com 400/404/409/410/413/415/422/500. Conflitos de concorrência retornam `409 CONFLITO_CONCORRENCIA`. Campos de compatibilidade (`codigo`, `mensagem`, `caminho`, `campos`) são mantidos como extensões.
 
 ## Migrações
 
@@ -92,8 +96,9 @@ com.ranny.fotografia
 - `src/main/resources/db/migration/V4__galerias.sql` cria galerias, mídias, derivados, links, seleção, extras, downloads e histórico; também inclui `VIDEO_ORIGINAL` no catálogo de arquivos.
 - `src/main/resources/db/migration/V5__versao_editada.sql` adiciona `FOTO_EDITADA` ao catálogo e a origem (`ORIGINAL`/`EDITADA`) dos derivados.
 - `src/main/resources/db/migration/V6__liberacao_raw.sql` adiciona a liberação auditada de RAW na galeria e a versão baixada no histórico.
+- `src/main/resources/db/migration/V7__auth.sql` cria `usuarios`, `refresh_tokens` e `auth_eventos`.
 - O Flyway é a fonte de verdade do schema; o Hibernate apenas valida (`ddl-auto=validate`).
-- **Nunca edite uma migração já aplicada.** Mudanças entram em `V7__...`, `V8__...`, etc.
+- **Nunca edite uma migração já aplicada.** Mudanças entram em `V8__...`, `V9__...`, etc.
 - `spring.flyway.baseline-on-migrate=true` protege bancos não vazios sem histórico; em banco novo, a V1 é aplicada normalmente.
 - O evento de contrato é compacto (chaves JSON curtas) para caber no `serialized_event varchar(255)`; `EventSerializationSpec` garante o limite.
 
@@ -102,7 +107,37 @@ com.ranny.fotografia
 - **Concorrência otimista:** todas as entidades mutáveis possuem `@Version` (`lock_version`). Atualizações concorrentes do mesmo registro resultam em `409`.
 - **Eventos duráveis:** `spring-modulith-starter-jpa` persiste eventos em `event_publication`; a tabela é criada na V1 com `serialized_event varchar(255)` e o payload do evento é compacto.
 - **Entrega eventual:** com o registry, o listener de contrato → agenda roda após o commit; a UI é atualizada localmente de imediato e o backend converge na sequência.
-- **CI:** `.github/workflows/ci.yml` executa a suíte H2 e um job PostgreSQL com service container, Flyway e `validate`.
+- **CI:** `.github/workflows/ci.yml` executa a suíte H2, um job PostgreSQL + Garage e publica a imagem `amd64` no GHCR.
+
+## Segurança de borda
+
+O `FiltroBordaSeguranca` roda no início da cadeia do Spring Security, antes de Controllers e Services:
+
+- limita o corpo por `Content-Length` e por contagem real de bytes (inclusive `Transfer-Encoding: chunked`) → `413 PAYLOAD_EXCEDIDO`;
+- exige `User-Agent` em requisições de API → `400 HEADER_OBRIGATORIO`;
+- exige `application/json` ou `+json` em `POST/PUT/PATCH` com corpo → `415 CONTENT_TYPE_*`;
+- bloqueia User-Agents de scanners e padrões óbvios de path traversal/arquivos sensíveis → `403 PADRAO_MALICIOSO`;
+- deixa um ponto de extensão (`AvaliadorAcessoIp`) para bloqueio/rate limiting por IP em Redis/cache, sem acoplar o filtro ao provedor;
+- ignora `OPTIONS`, dispatch de erro, Swagger/OpenAPI e `/actuator/health/**`.
+
+Configuração principal (`application.properties`):
+
+```properties
+app.seguranca.borda.max-payload-bytes=2097152
+app.seguranca.borda.exigir-user-agent=true
+app.seguranca.borda.exigir-content-type-em-mutacoes=true
+app.seguranca.borda.bloquear-padroes-scanning=true
+app.seguranca.borda.ip-check-habilitado=false
+app.seguranca.borda.confiar-em-proxy=false
+```
+
+O filtro não lê o corpo: JSON malformado continua sendo tratado pelo `GlobalExceptionHandler` com `400 CORPO_INVALIDO`.
+
+A autenticação usa **Spring Security + JWT RS256** com refresh em cookie `HttpOnly`, BCrypt, bloqueio por
+tentativas e auditoria. Rotas públicas (`/api/v1/public/**`) continuam abertas; o restante exige token.
+Perfis: `ADMIN` (tudo + `/api/v1/usuarios/**`) e `GESTOR` (tudo, menos usuários). Detalhes em `docs/AUTH.md`.
+
+> A Parte B (Circuit Breaker/Bulkhead) não foi implementada nesta entrega: não há gateway de pagamento externo e o Pix é confirmado manualmente pelo staff na galeria. O tema fica registrado em `docs/seguranca-borda.md`.
 
 ## Paginação e busca
 
@@ -136,7 +171,7 @@ Resposta padrão:
 
 ## Upload de comprovantes
 
-O arquivo **não passa pelo Spring**. O navegador envia direto ao MinIO/S3 por URLs pré-assinadas:
+O arquivo **não passa pelo Spring**. O navegador envia direto ao Garage/S3 por URLs pré-assinadas:
 
 1. `POST /api/v1/public/contratos/{token}/comprovante/upload`
 2. envio das partes ao storage;
@@ -157,20 +192,22 @@ Características:
 Configuração principal:
 
 ```properties
-app.storage.provider=minio
-app.storage.endpoint=http://localhost:9000
-app.storage.public-endpoint=http://localhost:9000
+app.storage.provider=s3
+app.storage.endpoint=http://localhost:3900
+app.storage.public-endpoint=http://localhost:3900
 app.storage.bucket=crm-originais
 app.storage.presign-seconds=600
 app.storage.max-comprovante-bytes=10485760
 ```
 
-Em VPS, use `APP_STORAGE_ENDPOINT=http://minio:9000` e `APP_STORAGE_PUBLIC_ENDPOINT=https://arquivos.seudominio.com`. O endpoint público também precisa estar no CORS do bucket. O download do staff ainda não tem autenticação; será protegido na fase de JWT.
+Em produção (Coolify), use `APP_STORAGE_ENDPOINT=https://arquivos.seudominio.com` e
+`APP_STORAGE_PUBLIC_ENDPOINT=https://arquivos.seudominio.com`. O endpoint público precisa estar no CORS do
+bucket. O download do staff agora é protegido pelo JWT.
 
 ## Galerias
 
 - Fotos até **50 MB** e vídeos até **500 MB**.
-- Upload direto ao MinIO/S3 com progresso, retomada e deduplicação.
+- Upload direto ao Garage/S3 com progresso, retomada e deduplicação.
 - Fotos geram derivados `thumb-400` e `web-1600` via processamento de imagem.
 - Vídeos são armazenados e entregues como original nesta fase.
 - Seleção pública por token de 30 dias; entrega por token de 90 dias.
@@ -196,6 +233,8 @@ Em VPS, use `APP_STORAGE_ENDPOINT=http://minio:9000` e `APP_STORAGE_PUBLIC_ENDPO
 
 | Recurso | Rotas |
 |---|---|
+| Auth | `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`, `POST /api/v1/auth/logout`, `GET /api/v1/auth/me`, `POST /api/v1/auth/change-password` |
+| Usuários (ADMIN) | `GET/POST /api/v1/usuarios`, `POST /api/v1/usuarios/{id}/reset-password`, `PUT /api/v1/usuarios/{id}`, `PATCH /api/v1/usuarios/{id}/ativo` |
 | Clientes | `GET/POST /api/v1/clientes`, `GET/PUT/DELETE /api/v1/clientes/{id}` |
 | Pacotes | `GET/POST /api/v1/pacotes`, `GET/PUT/DELETE /api/v1/pacotes/{id}`, `PATCH /api/v1/pacotes/{id}/ativo` |
 | Agenda | `GET/POST /api/v1/agenda`, `GET /api/v1/agenda/calendario`, `GET/PUT/DELETE /api/v1/agenda/{id}`, `PATCH /{id}/status`, `PUT /{id}/pagamento-entrada`, `PUT /{id}/pagamento-final` |
@@ -212,6 +251,9 @@ Em VPS, use `APP_STORAGE_ENDPOINT=http://minio:9000` e `APP_STORAGE_PUBLIC_ENDPO
 
 ## Próximas fases
 
-1. **Autenticação/JWT** e perfis de acesso.
-2. **Endurecimento**: processamento assíncrono de mídia, upload de versões editadas, poster/transcode de vídeos e ZIP de entrega.
-3. **Relatórios financeiros** adicionais (exportação, fluxo de caixa e conciliação).
+1. **MFA opcional e reset de senha por e-mail** (hoje a temporária é exibida uma vez pelo admin).
+2. **Backup** de PostgreSQL e Garage (decisão atual: sem backup).
+3. **Infraestrutura**: checksum server-side, job de limpeza de uploads órfãos, rate limit, observabilidade.
+4. **Vídeos**: poster e transcode H.264/WebM (hoje são entregues como original).
+5. **Relatórios financeiros** adicionais (exportação, fluxo de caixa e conciliação).
+6. **Notificações** automáticas por WhatsApp/e-mail (hoje o link é copiado manualmente).

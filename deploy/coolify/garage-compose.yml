@@ -1,0 +1,113 @@
+# Docker Compose do Garage para o Coolify 4.6.
+#
+# Crie um recurso "Docker Compose" apontando para este arquivo (ou cole o
+# conteudo na UI) e defina as variaveis GARAGE_* como secrets.
+#
+# Depois, no Coolify, associe o dominio https://arquivos.<dominio> ao servico
+# `garage`, porta 3900. O `garage-init` roda uma vez para aplicar CORS/lifecycle.
+
+services:
+  garage:
+    image: dxflrs/garage:v2.5.0
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    environment:
+      GARAGE_CONFIG_FILE: /etc/garage.toml
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN}
+      GARAGE_METRICS_TOKEN: ${GARAGE_METRICS_TOKEN}
+      GARAGE_ALLOW_WORLD_READABLE_SECRETS: "true"
+      GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_DEFAULT_ACCESS_KEY}
+      GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_DEFAULT_SECRET_KEY}
+      GARAGE_DEFAULT_BUCKET: crm-originais
+      RUST_LOG: garage=info
+    volumes:
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+      - type: bind
+        source: ./garage.toml
+        target: /etc/garage.toml
+        content: |
+          metadata_dir = "/var/lib/garage/meta"
+          data_dir = "/var/lib/garage/data"
+          db_engine = "sqlite"
+
+          replication_factor = 1
+          consistency_mode = "consistent"
+
+          metadata_fsync = true
+          data_fsync = true
+          metadata_auto_snapshot_interval = "24h"
+          block_size = "10M"
+          compression_level = "none"
+
+          rpc_bind_addr = "[::]:3901"
+          rpc_secret_file = "env:GARAGE_RPC_SECRET"
+          bootstrap_peers = []
+
+          [s3_api]
+          s3_region = "us-east-1"
+          api_bind_addr = "[::]:3900"
+          public_endpoint = "https://arquivos.rannyamaralfotografia.digital"
+          public_endpoint_path_style = true
+
+          [admin]
+          api_bind_addr = "[::]:3903"
+          admin_token_file = "env:GARAGE_ADMIN_TOKEN"
+          metrics_token_file = "env:GARAGE_METRICS_TOKEN"
+    healthcheck:
+      test: ["CMD", "/garage", "stats", "-a"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  garage-init:
+    image: amazon/aws-cli:2.17.0
+    restart: "no"
+    depends_on:
+      garage:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${GARAGE_DEFAULT_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${GARAGE_DEFAULT_SECRET_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://garage:3900
+    volumes:
+      - type: bind
+        source: ./cors.json
+        target: /config/cors.json
+        content: |
+          {
+            "CORSRules": [{
+              "AllowedOrigins": [
+                "https://www.rannyamaralfotografia.digital",
+                "https://rannyamaralfotografia.digital"
+              ],
+              "AllowedMethods": ["GET", "HEAD", "PUT", "POST"],
+              "AllowedHeaders": ["*"],
+              "ExposeHeaders": ["ETag", "Content-Length", "Content-Type"],
+              "MaxAgeSeconds": 3600
+            }]
+          }
+      - type: bind
+        source: ./lifecycle.json
+        target: /config/lifecycle.json
+        content: |
+          {
+            "Rules": [{
+              "ID": "abortar-multipart-incompleto",
+              "Status": "Enabled",
+              "Filter": { "Prefix": "" },
+              "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 3 }
+            }]
+          }
+    command:
+      - /bin/sh
+      - -c
+      - |
+        until aws s3api head-bucket --bucket crm-originais 2>/dev/null; do sleep 1; done
+        aws s3api put-bucket-cors --bucket crm-originais --cors-configuration file:///config/cors.json
+        aws s3api put-bucket-lifecycle-configuration --bucket crm-originais --lifecycle-configuration file:///config/lifecycle.json
+
+volumes:
+  garage-meta:
+  garage-data:

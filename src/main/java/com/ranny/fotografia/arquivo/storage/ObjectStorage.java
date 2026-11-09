@@ -10,7 +10,7 @@ import java.util.List;
  *
  * <p>PATTERN: Ports & Adapters / Strategy.
  *
- * <p>O restante do backend nunca conhece MinIO, S3 ou disco. Trocar o provedor
+ * <p>O restante do backend nunca conhece Garage, S3 ou disco. Trocar o provedor
  * exige apenas outra implementacao desta interface. Os bytes sao enviados e
  * lidos diretamente pelo cliente por URLs pre-assinadas.
  */

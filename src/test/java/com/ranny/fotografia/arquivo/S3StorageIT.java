@@ -26,16 +26,16 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Integracao real com MinIO via URLs pre-assinadas.
+ * Integracao real com Garage/S3 via URLs pre-assinadas.
  *
- * <p>Executado no `verify` apenas quando MINIO_TEST_ENDPOINT estiver definido.
+ * <p>Executado no `verify` apenas quando S3_TEST_ENDPOINT estiver definido.
  * Valida o caminho multipart, conclusao, checksum, validacao de conteudo e
  * download direto do storage.
  */
 @SpringBootTest
-@ActiveProfiles("minio-test")
-@EnabledIfEnvironmentVariable(named = "MINIO_TEST_ENDPOINT", matches = ".+")
-class MinioStorageIT {
+@ActiveProfiles("s3-test")
+@EnabledIfEnvironmentVariable(named = "S3_TEST_ENDPOINT", matches = ".+")
+class S3StorageIT {
 
     private static final long MAX_COMPROVANTE = 10L * 1024 * 1024;
 
@@ -66,11 +66,11 @@ class MinioStorageIT {
     @Test
     void enviaMultipartConcluiEBaixaDoStorage() throws Exception {
         byte[] conteudo = conteudoPdf(9 * 1024 * 1024);
-        String referencia = "ct-minio-multipart";
+        String referencia = "ct-s3-multipart";
         ArquivoUpload.SessaoUpload sessao = arquivoUpload.iniciar(new ArquivoUpload.IniciarUpload(
                 ArquivoFinalidade.COMPROVANTE_PAGAMENTO,
                 referencia,
-                "testes/minio",
+                "testes/s3",
                 "comprovante.pdf",
                 "application/pdf",
                 conteudo.length,
@@ -117,11 +117,11 @@ class MinioStorageIT {
     @Test
     void enviaPutUnicoEConclui() throws Exception {
         byte[] conteudo = conteudoPdf(1024 * 1024);
-        String referencia = "ct-minio-put";
+        String referencia = "ct-s3-put";
         ArquivoUpload.SessaoUpload sessao = arquivoUpload.iniciar(new ArquivoUpload.IniciarUpload(
                 ArquivoFinalidade.COMPROVANTE_PAGAMENTO,
                 referencia,
-                "testes/minio",
+                "testes/s3",
                 "comprovante.pdf",
                 "application/pdf",
                 conteudo.length,

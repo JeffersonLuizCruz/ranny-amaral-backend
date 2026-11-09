@@ -35,7 +35,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Adapter S3 compativel com MinIO.
+ * Adapter S3 compativel com Garage.
  *
  * <p>PATTERN: Adapter.
  *
@@ -44,7 +44,7 @@ import java.util.List;
  * publico.
  */
 @Component
-@ConditionalOnProperty(name = "app.storage.provider", havingValue = "minio", matchIfMissing = true)
+@ConditionalOnProperty(name = "app.storage.provider", havingValue = "s3", matchIfMissing = true)
 public class S3ObjectStorage implements ObjectStorage {
 
     private final S3Client s3;

@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>PATTERN: Test Double (Fake) da porta {@link ObjectStorage}.
  *
- * <p>Os testes de API nao precisam de MinIO real: este fake simula objetos e
+ * <p>Os testes de API nao precisam de storage real: este fake simula objetos e
  * permite configurar tamanho, MIME e primeiros bytes para exercitar validacoes.
  */
 @Component

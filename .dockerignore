@@ -1,0 +1,13 @@
+target/
+.git/
+.gitignore
+.idea/
+*.iml
+.DS_Store
+data/
+logs/
+uploads/
+docs/
+deploy/
+.env
+.env.local

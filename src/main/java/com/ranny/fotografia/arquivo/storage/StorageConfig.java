@@ -17,7 +17,7 @@ import java.net.URI;
  * PATTERN: Factory / Adapter Configuration.
  *
  * <p>Cria um cliente S3 para operacoes internas (endpoint da rede Docker) e um
- * presigner com o endpoint publico. Em MinIO/S3 compativel o path-style precisa
+ * presigner com o endpoint publico. Em Garage/S3 compativel o path-style precisa
  * estar habilitado. Sem separar os endpoints, a URL assinada aponta para um host
  * inacessivel ao navegador.
  */
@@ -26,7 +26,7 @@ import java.net.URI;
 public class StorageConfig {
 
     @Bean(destroyMethod = "close")
-    @ConditionalOnProperty(name = "app.storage.provider", havingValue = "minio", matchIfMissing = true)
+    @ConditionalOnProperty(name = "app.storage.provider", havingValue = "s3", matchIfMissing = true)
     public S3Client s3Interno(StorageProperties properties) {
         return S3Client.builder()
                 .endpointOverride(URI.create(properties.getEndpoint()))
@@ -37,7 +37,7 @@ public class StorageConfig {
     }
 
     @Bean(destroyMethod = "close")
-    @ConditionalOnProperty(name = "app.storage.provider", havingValue = "minio", matchIfMissing = true)
+    @ConditionalOnProperty(name = "app.storage.provider", havingValue = "s3", matchIfMissing = true)
     public S3Presigner s3PresignerPublico(StorageProperties properties) {
         return S3Presigner.builder()
                 .endpointOverride(URI.create(properties.getPublicEndpoint()))
