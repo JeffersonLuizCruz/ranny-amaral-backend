@@ -102,7 +102,8 @@ public class ContratoService implements ContratoConsulta {
     }
 
     @Transactional(readOnly = true)
-    public PaginaResponse<ContratoResponse> listar(StatusAceite status, PagamentoStatus statusPagamento,
+    public PaginaResponse<ContratoResponse> listar(StatusAceite status, PagamentoStatus statusEntrada,
+                                                   PagamentoStatus statusSaldoFinal,
                                                    String clienteId, String agendamentoId, String busca,
                                                    Integer pagina, Integer tamanho) {
         Specification<Contrato> spec = (root, query, cb) -> cb.conjunction();
@@ -110,9 +111,14 @@ public class ContratoService implements ContratoConsulta {
         if (filtroStatus != null) {
             spec = spec.and(filtroStatus);
         }
-        Specification<Contrato> filtroPagamento = ContratoSpecifications.comStatusPagamento(statusPagamento);
-        if (filtroPagamento != null) {
-            spec = spec.and(filtroPagamento);
+        Specification<Contrato> filtroEntrada = ContratoSpecifications.comStatusEntrada(statusEntrada);
+        if (filtroEntrada != null) {
+            spec = spec.and(filtroEntrada);
+        }
+        Specification<Contrato> filtroSaldoFinal =
+                ContratoSpecifications.comStatusSaldoFinal(statusSaldoFinal);
+        if (filtroSaldoFinal != null) {
+            spec = spec.and(filtroSaldoFinal);
         }
         Specification<Contrato> filtroCliente = ContratoSpecifications.doCliente(clienteId);
         if (filtroCliente != null) {

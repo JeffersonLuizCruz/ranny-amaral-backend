@@ -5,6 +5,7 @@ import com.ranny.fotografia.agenda.repository.AgendamentoRepository
 import com.ranny.fotografia.cliente.repository.ClienteRepository
 import com.ranny.fotografia.pacote.model.PromocaoPacote
 import com.ranny.fotografia.pacote.repository.PacoteRepository
+import com.ranny.fotografia.shared.model.PagamentoStatus
 import com.ranny.fotografia.support.Cenario
 import com.ranny.fotografia.support.JsonCorpo
 import org.springframework.beans.factory.annotation.Autowired
@@ -314,11 +315,36 @@ class AgendaControllerSpec extends Specification {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath('$.pagamentoFinal.status').value("confirmado"))
                 .andExpect(jsonPath('$.pagamentoFinal.formaPagamento').value("dinheiro"))
+                .andExpect(jsonPath('$.statusEntrada').value("confirmado"))
+                .andExpect(jsonPath('$.statusSaldoFinal').value("confirmado"))
+                .andExpect(jsonPath('$.entradaQuitada').value(true))
+                .andExpect(jsonPath('$.saldoQuitado').value(true))
+                .andExpect(jsonPath('$.quitado').value(true))
+                .andExpect(jsonPath('$.valorRecebido').value(1000.0d))
+                .andExpect(jsonPath('$.valorPendente').value(0.0d))
                 .andReturn()
 
         then:
         JsonCorpo.mapa(entrada).saldoRestante == 700.0d
         JsonCorpo.mapa(saldo).pagamentoFinal.recebidoEm
+    }
+
+    def "rejeita saldo final parcial no agendamento"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository)
+        def pacote = Cenario.pacote(pacoteRepository)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote)
+
+        when:
+        def resultado = mockMvc.perform(put("/api/v1/agenda/${agendamento.id}/pagamento-final")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([valor: 100.00, status: "confirmado", formaPagamento: "dinheiro"])))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "SALDO_FINAL_INTEGRAL_OBRIGATORIO"
+        agendamentoRepository.findById(agendamento.id).get().pagamentoFinal.status == PagamentoStatus.PENDENTE
     }
 
     def "impede excluir agendamento com contrato vinculado"() {

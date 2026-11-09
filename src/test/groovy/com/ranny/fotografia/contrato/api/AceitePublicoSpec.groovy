@@ -176,7 +176,7 @@ class AceitePublicoSpec extends Specification {
                 .content(JsonCorpo.json([partes: []])))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath('$.contrato.pagamento.arquivoId').value(arquivoId))
-                .andExpect(jsonPath('$.contrato.statusPagamento').value("pendente"))
+                .andExpect(jsonPath('$.contrato.statusEntrada').value("pendente"))
                 .andReturn()
 
         then:

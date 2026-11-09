@@ -78,6 +78,36 @@ class GaleriaControllerSpec extends Specification {
         JsonCorpo.mapa(resultado).codigo == "ENSAIO_NAO_REALIZADO"
     }
 
+    def "nao publica selecao com saldo final parcial"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository, "Cliente Saldo Parcial")
+        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), StatusAgendamento.REALIZADO)
+        agendamento.atualizarPagamentoEntrada(
+                new BigDecimal("300.00"), new BigDecimal("30.00"),
+                PagamentoEntrada.confirmada(new BigDecimal("300.00"), new BigDecimal("30.00"),
+                        Instant.now(), "Teste"))
+        agendamento.atualizarPagamentoFinal(
+                PagamentoSaldo.recebido(new BigDecimal("100.00"), FormaPagamentoSaldo.PIX,
+                        Instant.now(), "Teste"))
+        agendamentoRepository.saveAndFlush(agendamento)
+
+        def galeria = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/galerias")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([agendamentoId: agendamento.id])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/galerias/${galeria.id}/selecao/publicar"))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "SALDO_PENDENTE"
+    }
+
     def "fluxo completo de galeria: upload, selecao e entrega"() {
         given:
         def cliente = Cenario.cliente(clienteRepository, "Marina Galeria")

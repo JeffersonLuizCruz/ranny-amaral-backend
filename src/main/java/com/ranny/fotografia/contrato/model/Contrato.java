@@ -380,11 +380,22 @@ public class Contrato {
 
     public void registrarPagamentoFinal(BigDecimal valor, FormaPagamentoSaldo forma,
                                         Instant em, String por, String observacoes) {
-        pagamentoFinal.receber(valor, forma, em, por, observacoes);
+        BigDecimal previsto = saldoRestante == null ? BigDecimal.ZERO : saldoRestante;
+        if (previsto.signum() <= 0) {
+            throw new RegraDeNegocioException("SALDO_FINAL_INEXISTENTE",
+                    "Este contrato nao possui saldo final a receber.");
+        }
+        BigDecimal recebido = valor == null ? previsto : valor;
+        if (recebido.compareTo(previsto) != 0) {
+            throw new RegraDeNegocioException("SALDO_FINAL_INTEGRAL_OBRIGATORIO",
+                    "O saldo final deve ser recebido integralmente (previsto: R$ "
+                            + previsto.toPlainString() + ").");
+        }
+        pagamentoFinal.receber(recebido, forma, em, por, observacoes);
         statusPagamentoFinal = pagamentoFinal.getStatus();
         adicionarHistorico(ContratoEventoTipo.SALDO_RECEBIDO,
                 "Saldo final de %s recebido via %s.".formatted(
-                        valor == null ? "0,00" : valor.toPlainString(),
+                        recebido.toPlainString(),
                         forma == null ? "outro" : forma.getValor()),
                 em);
         auditoria.marcarAtualizacao();

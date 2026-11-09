@@ -39,7 +39,6 @@ import com.ranny.fotografia.shared.api.Paginacao;
 import com.ranny.fotografia.shared.exception.RecursoExpiradoException;
 import com.ranny.fotografia.shared.exception.RecursoNaoEncontradoException;
 import com.ranny.fotografia.shared.exception.RegraDeNegocioException;
-import com.ranny.fotografia.shared.model.PagamentoStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -911,13 +910,13 @@ public class GaleriaService implements GaleriaConsulta {
             throw new RegraDeNegocioException("ENSAIO_NAO_REALIZADO",
                     "Marque o ensaio como realizado antes de publicar a galeria.");
         }
-        if (!liquidado(agendamento.entradaStatus())) {
+        if (!agendamento.entradaQuitada()) {
             throw new RegraDeNegocioException("ENTRADA_PENDENTE",
                     "A entrada do ensaio ainda nao foi confirmada.");
         }
-        if (!liquidado(agendamento.finalStatus())) {
+        if (!agendamento.saldoQuitado()) {
             throw new RegraDeNegocioException("SALDO_PENDENTE",
-                    "Registre o recebimento do saldo final antes de publicar a galeria.");
+                    "Registre o recebimento integral do saldo final antes de publicar a galeria.");
         }
         long fotos = midiaRepository.countByGaleriaIdAndTipoAndStatus(
                 galeria.getId(), MidiaTipo.FOTO, MidiaStatus.DISPONIVEL);
@@ -935,9 +934,6 @@ public class GaleriaService implements GaleriaConsulta {
         }
     }
 
-    private static boolean liquidado(PagamentoStatus status) {
-        return status == PagamentoStatus.CONFIRMADO || status == PagamentoStatus.ISENTO;
-    }
 
     private LinkGaleria linkAtivo(String token, LinkGaleriaTipo tipo) {
         LinkGaleria link = linkRepository.findByToken(token)

@@ -22,9 +22,14 @@ public final class ContratoSpecifications {
                 : (root, query, cb) -> cb.equal(root.get("statusAceite"), status);
     }
 
-    public static Specification<Contrato> comStatusPagamento(PagamentoStatus status) {
+    public static Specification<Contrato> comStatusEntrada(PagamentoStatus status) {
         return status == null ? null
                 : (root, query, cb) -> cb.equal(root.get("statusPagamento"), status);
+    }
+
+    public static Specification<Contrato> comStatusSaldoFinal(PagamentoStatus status) {
+        return status == null ? null
+                : (root, query, cb) -> cb.equal(root.get("statusPagamentoFinal"), status);
     }
 
     public static Specification<Contrato> doCliente(String clienteId) {

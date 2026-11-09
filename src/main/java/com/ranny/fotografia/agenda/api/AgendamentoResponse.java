@@ -11,6 +11,7 @@ import com.ranny.fotografia.shared.model.PagamentoEntrada;
 import com.ranny.fotografia.shared.model.PagamentoSaldo;
 import com.ranny.fotografia.shared.model.PagamentoStatus;
 import com.ranny.fotografia.shared.model.RejeicaoComprovante;
+import com.ranny.fotografia.shared.financeiro.ResumoPagamento;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -44,10 +45,23 @@ public record AgendamentoResponse(
         CondicoesPacoteResponse condicoesPacote,
         String galeriaId,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        PagamentoStatus statusEntrada,
+        PagamentoStatus statusSaldoFinal,
+        boolean entradaQuitada,
+        boolean saldoQuitado,
+        boolean quitado,
+        BigDecimal valorRecebido,
+        BigDecimal valorPendente
 ) {
 
     public static AgendamentoResponse de(Agendamento agendamento) {
+        ResumoPagamento resumo = ResumoPagamento.de(
+                agendamento.getPagamentoEntrada(),
+                agendamento.getPagamentoFinal(),
+                agendamento.getValorEntrada(),
+                agendamento.getSaldoRestante());
+
         return new AgendamentoResponse(
                 agendamento.getId(),
                 agendamento.getClienteId(),
@@ -68,7 +82,14 @@ public record AgendamentoResponse(
                 CondicoesPacoteResponse.de(agendamento.getCondicoesPacote()),
                 agendamento.getGaleriaId(),
                 agendamento.getAuditoria().getCriadoEm(),
-                agendamento.getAuditoria().getAtualizadoEm()
+                agendamento.getAuditoria().getAtualizadoEm(),
+                resumo.statusEntrada(),
+                resumo.statusSaldoFinal(),
+                resumo.entradaQuitada(),
+                resumo.saldoQuitado(),
+                resumo.quitado(),
+                resumo.valorRecebido(),
+                resumo.valorPendente()
         );
     }
 

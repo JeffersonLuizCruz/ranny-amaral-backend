@@ -39,6 +39,11 @@ public interface AgendamentoConsulta {
             BigDecimal saldoRestante,
             PagamentoStatus entradaStatus,
             PagamentoStatus finalStatus,
+            boolean entradaQuitada,
+            boolean saldoQuitado,
+            boolean quitado,
+            BigDecimal valorRecebido,
+            BigDecimal valorPendente,
             CondicoesResumo condicoes
     ) {
 

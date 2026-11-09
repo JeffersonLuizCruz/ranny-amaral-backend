@@ -12,6 +12,7 @@ import com.ranny.fotografia.shared.model.PagamentoEntrada;
 import com.ranny.fotografia.shared.model.PagamentoSaldo;
 import com.ranny.fotografia.shared.model.PagamentoStatus;
 import com.ranny.fotografia.shared.model.RejeicaoComprovante;
+import com.ranny.fotografia.shared.financeiro.ResumoPagamento;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -26,7 +27,6 @@ public record ContratoResponse(
         String pacoteId,
         String modeloId,
         StatusAceite statusAceite,
-        PagamentoStatus statusPagamento,
         String titulo,
         List<ContratoClausula> clausulas,
         List<ContratoClausula> clausulasModelo,
@@ -37,7 +37,6 @@ public record ContratoResponse(
         BigDecimal saldoRestante,
         PagamentoEntradaResponse pagamento,
         PagamentoSaldoResponse pagamentoFinal,
-        PagamentoStatus statusPagamentoFinal,
         String formaPagamento,
         String condicoesPagamento,
         Instant dataEmissao,
@@ -47,10 +46,23 @@ public record ContratoResponse(
         List<ContratoEvento> historico,
         String observacoes,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        PagamentoStatus statusEntrada,
+        PagamentoStatus statusSaldoFinal,
+        boolean entradaQuitada,
+        boolean saldoQuitado,
+        boolean quitado,
+        BigDecimal valorRecebido,
+        BigDecimal valorPendente
 ) {
 
     public static ContratoResponse de(Contrato contrato) {
+        ResumoPagamento resumo = ResumoPagamento.de(
+                contrato.getPagamento(),
+                contrato.getPagamentoFinal(),
+                contrato.getValorEntrada(),
+                contrato.getSaldoRestante());
+
         return new ContratoResponse(
                 contrato.getId(),
                 contrato.getNumero(),
@@ -59,7 +71,6 @@ public record ContratoResponse(
                 contrato.getPacoteId(),
                 contrato.getModeloId(),
                 contrato.getStatusAceite(),
-                contrato.getStatusPagamento(),
                 contrato.getTitulo(),
                 contrato.getClausulas(),
                 contrato.getClausulasModelo(),
@@ -70,7 +81,6 @@ public record ContratoResponse(
                 contrato.getSaldoRestante(),
                 PagamentoEntradaResponse.de(contrato.getPagamento()),
                 PagamentoSaldoResponse.de(contrato.getPagamentoFinal()),
-                contrato.getStatusPagamentoFinal(),
                 contrato.getFormaPagamento(),
                 contrato.getCondicoesPagamento(),
                 contrato.getDataEmissao(),
@@ -80,7 +90,14 @@ public record ContratoResponse(
                 contrato.getHistorico(),
                 contrato.getObservacoes(),
                 contrato.getAuditoria().getCriadoEm(),
-                contrato.getAuditoria().getAtualizadoEm()
+                contrato.getAuditoria().getAtualizadoEm(),
+                resumo.statusEntrada(),
+                resumo.statusSaldoFinal(),
+                resumo.entradaQuitada(),
+                resumo.saldoQuitado(),
+                resumo.quitado(),
+                resumo.valorRecebido(),
+                resumo.valorPendente()
         );
     }
 

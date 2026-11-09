@@ -33,6 +33,20 @@ Para apontar para outro banco, use `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_U
 
 > Se já existir outro PostgreSQL ocupando a porta 5432, pare-o antes de subir o compose deste projeto (ou ajuste a porta e a URL do datasource).
 
+### Limpar os dados locais
+
+Para apagar todos os registros de teste preservando schema e histórico do Flyway:
+
+```bash
+bash scripts/reset-dev-db.sh
+```
+
+O script trunca todas as tabelas de `public`, exceto `flyway_schema_history`. No próximo boot, o perfil `dev` pode repopular os dados de demonstração. Para subir com o banco vazio:
+
+```bash
+APP_SEED_ENABLED=false ./mvnw spring-boot:run
+```
+
 ## Testes
 
 ```bash
@@ -166,7 +180,8 @@ Resposta padrão:
 - `pagina` ou `tamanho` inválidos retornam `400 PAGINACAO_INVALIDA`.
 - Clientes: busca em nome, WhatsApp e e-mail.
 - Pacotes: busca em nome e descrição, além do filtro `ativo`.
-- Contratos: busca em número, nome do cliente e nome do pacote (colunas desnormalizadas na V2), além de `statusAceite`, `statusPagamento`, `clienteId` e `agendamentoId`.
+- Contratos: busca em número, nome do cliente e nome do pacote (colunas desnormalizadas na V2), além de `statusAceite`, `statusEntrada`, `statusSaldoFinal`, `clienteId` e `agendamentoId`. A resposta também expõe `entradaQuitada`, `saldoQuitado`, `quitado`, `valorRecebido` e `valorPendente`.
+- Agendamentos: a resposta também expõe `statusEntrada`, `statusSaldoFinal`, `entradaQuitada`, `saldoQuitado`, `quitado`, `valorRecebido` e `valorPendente`, com os mesmos campos derivados do contrato.
 - Agenda: `GET /api/v1/agenda` é paginado e aceita `inicio`/`fim`/`status`. O calendário usa `GET /api/v1/agenda/calendario?inicio=...&fim=...`, que exige o período completo.
 
 ## Upload de comprovantes

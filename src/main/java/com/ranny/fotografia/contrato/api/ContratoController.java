@@ -38,7 +38,8 @@ public class ContratoController {
     @Operation(summary = "Lista contratos de forma paginada por status, cliente, agendamento ou texto")
     public PaginaResponse<ContratoResponse> listar(
             @RequestParam(required = false) StatusAceite statusAceite,
-            @RequestParam(required = false) PagamentoStatus statusPagamento,
+            @RequestParam(required = false) PagamentoStatus statusEntrada,
+            @RequestParam(required = false) PagamentoStatus statusSaldoFinal,
             @RequestParam(required = false) String clienteId,
             @RequestParam(required = false) String agendamentoId,
             @RequestParam(required = false) String q,
@@ -46,7 +47,8 @@ public class ContratoController {
             @RequestParam(required = false) Integer pagina,
             @Parameter(description = "Tamanho da pagina (1 a 100, default 20)")
             @RequestParam(required = false) Integer tamanho) {
-        return contratoService.listar(statusAceite, statusPagamento, clienteId, agendamentoId, q, pagina, tamanho);
+        return contratoService.listar(statusAceite, statusEntrada, statusSaldoFinal,
+                clienteId, agendamentoId, q, pagina, tamanho);
     }
 
     @GetMapping("/{id}")

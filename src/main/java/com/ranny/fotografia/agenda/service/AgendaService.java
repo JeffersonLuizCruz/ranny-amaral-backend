@@ -21,6 +21,7 @@ import com.ranny.fotografia.shared.exception.RequisicaoInvalidaException;
 import com.ranny.fotografia.shared.exception.RecursoNaoEncontradoException;
 import com.ranny.fotografia.shared.exception.RegraDeNegocioException;
 import com.ranny.fotografia.shared.financeiro.CalculadoraPagamento;
+import com.ranny.fotografia.shared.financeiro.ResumoPagamento;
 import com.ranny.fotografia.shared.model.FormaPagamentoSaldo;
 import com.ranny.fotografia.shared.model.PagamentoEntrada;
 import com.ranny.fotografia.shared.model.PagamentoSaldo;
@@ -261,9 +262,17 @@ public class AgendaService implements AgendamentoConsulta {
         BigDecimal valor = request.valor() != null
                 ? CalculadoraPagamento.normalizar(request.valor())
                 : agendamento.getSaldoRestante();
-        pagamento.redefinirValor(valor);
 
         PagamentoStatus status = request.status();
+        if (status == PagamentoStatus.CONFIRMADO
+                && valor.compareTo(agendamento.getSaldoRestante()) != 0) {
+            throw new RegraDeNegocioException("SALDO_FINAL_INTEGRAL_OBRIGATORIO",
+                    "O saldo final deve ser recebido integralmente (previsto: R$ "
+                            + agendamento.getSaldoRestante().toPlainString() + ").");
+        }
+
+        pagamento.redefinirValor(valor);
+
         if (status == PagamentoStatus.CONFIRMADO) {
             pagamento.receber(
                     valor,
@@ -373,6 +382,11 @@ public class AgendaService implements AgendamentoConsulta {
     private static ResumoAgendamento paraResumo(Agendamento agendamento) {
         ContatoReserva contato = agendamento.getContato();
         CondicoesPacote condicoes = agendamento.getCondicoesPacote();
+        var resumoPagamento = ResumoPagamento.de(
+                agendamento.getPagamentoEntrada(),
+                agendamento.getPagamentoFinal(),
+                agendamento.getValorEntrada(),
+                agendamento.getSaldoRestante());
         return new ResumoAgendamento(
                 agendamento.getId(),
                 agendamento.getClienteId(),
@@ -390,6 +404,11 @@ public class AgendaService implements AgendamentoConsulta {
                 agendamento.getSaldoRestante(),
                 agendamento.getPagamentoEntrada() == null ? null : agendamento.getPagamentoEntrada().getStatus(),
                 agendamento.getPagamentoFinal() == null ? null : agendamento.getPagamentoFinal().getStatus(),
+                resumoPagamento.entradaQuitada(),
+                resumoPagamento.saldoQuitado(),
+                resumoPagamento.quitado(),
+                resumoPagamento.valorRecebido(),
+                resumoPagamento.valorPendente(),
                 condicoes == null ? null : new ResumoAgendamento.CondicoesResumo(
                         condicoes.getQuantidadeFotosInclusas(),
                         condicoes.getQuantidadeVideosInclusos(),

@@ -82,7 +82,13 @@ class ContratoControllerSpec extends Specification {
                 .content(JsonCorpo.json(corpoPadrao())))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath('$.statusAceite').value("rascunho"))
-                .andExpect(jsonPath('$.statusPagamento').value("pendente"))
+                .andExpect(jsonPath('$.statusEntrada').value("pendente"))
+                .andExpect(jsonPath('$.statusSaldoFinal').value("pendente"))
+                .andExpect(jsonPath('$.entradaQuitada').value(false))
+                .andExpect(jsonPath('$.saldoQuitado').value(false))
+                .andExpect(jsonPath('$.quitado').value(false))
+                .andExpect(jsonPath('$.valorRecebido').value(0.0d))
+                .andExpect(jsonPath('$.valorPendente').value(1000.0d))
                 .andExpect(jsonPath('$.valorEntrada').value(300.0d))
                 .andExpect(jsonPath('$.saldoRestante').value(700.0d))
                 .andExpect(jsonPath('$.snapshot.cliente.nome').value("Marina Teste"))
@@ -239,7 +245,10 @@ class ContratoControllerSpec extends Specification {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(JsonCorpo.json([confirmadoPor: "Ana Souza"])))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath('$.statusPagamento').value("confirmado"))
+                .andExpect(jsonPath('$.statusEntrada').value("confirmado"))
+                .andExpect(jsonPath('$.entradaQuitada').value(true))
+                .andExpect(jsonPath('$.valorRecebido').value(300.0d))
+                .andExpect(jsonPath('$.valorPendente').value(700.0d))
                 .andExpect(jsonPath('$.pagamento.confirmadoPor').value("Ana Souza"))
                 .andReturn()
 
@@ -256,7 +265,7 @@ class ContratoControllerSpec extends Specification {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(JsonCorpo.json([motivo: "Comprovante ilegivel"])))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath('$.statusPagamento').value("pendente"))
+                .andExpect(jsonPath('$.statusEntrada').value("pendente"))
                 .andExpect(jsonPath('$.pagamento.rejeicao.motivo').value("Comprovante ilegivel"))
                 .andReturn()
 
@@ -271,7 +280,7 @@ class ContratoControllerSpec extends Specification {
         expect:
         mockMvc.perform(post("/api/v1/contratos/${contrato.id}/pagamento/isentar"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath('$.statusPagamento').value("isento"))
+                .andExpect(jsonPath('$.statusEntrada').value("isento"))
     }
 
     def "registra o saldo final e permite reabrir quando nao confirmado"() {
@@ -283,22 +292,64 @@ class ContratoControllerSpec extends Specification {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(JsonCorpo.json([valor: 700.00, formaPagamento: "dinheiro", recebidoPor: "Ana"])))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath('$.statusPagamentoFinal').value("confirmado"))
+                .andExpect(jsonPath('$.statusSaldoFinal').value("confirmado"))
+                .andExpect(jsonPath('$.saldoQuitado').value(true))
+                .andExpect(jsonPath('$.valorRecebido').value(700.0d))
+                .andExpect(jsonPath('$.valorPendente').value(300.0d))
                 .andExpect(jsonPath('$.pagamentoFinal.formaPagamento').value("dinheiro"))
                 .andReturn()
 
         def isento = mockMvc.perform(post("/api/v1/contratos/${contrato.id}/pagamento-final/isentar"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath('$.statusPagamentoFinal').value("isento"))
+                .andExpect(jsonPath('$.statusSaldoFinal').value("isento"))
                 .andReturn()
 
         def reaberto = mockMvc.perform(post("/api/v1/contratos/${contrato.id}/pagamento-final/reabrir"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath('$.statusPagamentoFinal').value("pendente"))
+                .andExpect(jsonPath('$.statusSaldoFinal').value("pendente"))
                 .andReturn()
 
         then:
         receiptsValidos(recebido, isento, reaberto)
+    }
+
+    def "marca o contrato como quitado quando entrada e saldo final estao confirmados"() {
+        given:
+        def contrato = criarContrato()
+        mockMvc.perform(post("/api/v1/contratos/${contrato.id}/pagamento/confirmar")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+                .andExpect(status().isOk())
+
+        when:
+        def resultado = mockMvc.perform(put("/api/v1/contratos/${contrato.id}/pagamento-final")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([valor: 700.00, formaPagamento: "pix"])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.quitado').value(true))
+                .andExpect(jsonPath('$.valorRecebido').value(1000.0d))
+                .andExpect(jsonPath('$.valorPendente').value(0.0d))
+                .andReturn()
+
+        then:
+        JsonCorpo.mapa(resultado).statusSaldoFinal == "confirmado"
+    }
+
+    def "rejeita saldo final parcial e mantem o pagamento pendente"() {
+        given:
+        def contrato = criarContrato()
+
+        when:
+        mockMvc.perform(put("/api/v1/contratos/${contrato.id}/pagamento-final")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([valor: 100.00, formaPagamento: "dinheiro", recebidoPor: "Ana"])))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath('$.codigo').value("SALDO_FINAL_INTEGRAL_OBRIGATORIO"))
+
+        then:
+        def atual = JsonCorpo.mapa(mockMvc.perform(get("/api/v1/contratos/${contrato.id}")).andReturn())
+        atual.statusSaldoFinal == "pendente"
+        atual.pagamentoFinal.status == "pendente"
     }
 
     def "cancela contrato pendente e propaga o cancelamento aos pagamentos"() {
@@ -310,8 +361,8 @@ class ContratoControllerSpec extends Specification {
         def cancelado = mockMvc.perform(post("/api/v1/contratos/${contrato.id}/cancelar"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath('$.statusAceite').value("cancelado"))
-                .andExpect(jsonPath('$.statusPagamento').value("cancelado"))
-                .andExpect(jsonPath('$.statusPagamentoFinal').value("cancelado"))
+                .andExpect(jsonPath('$.statusEntrada').value("cancelado"))
+                .andExpect(jsonPath('$.statusSaldoFinal').value("cancelado"))
                 .andReturn()
 
         then:
@@ -343,7 +394,7 @@ class ContratoControllerSpec extends Specification {
         rascunhos.itens[0].id == rascunho.id
     }
 
-    def "filtra contratos por status de pagamento"() {
+    def "filtra contratos por status da entrada"() {
         given:
         def confirmado = criarContrato()
         criarContrato()
@@ -354,9 +405,9 @@ class ContratoControllerSpec extends Specification {
 
         when:
         def confirmados = JsonCorpo.mapa(mockMvc.perform(get("/api/v1/contratos")
-                .param("statusPagamento", "confirmado")).andReturn())
+                .param("statusEntrada", "confirmado")).andReturn())
         def pendentes = JsonCorpo.mapa(mockMvc.perform(get("/api/v1/contratos")
-                .param("statusPagamento", "pendente")).andReturn())
+                .param("statusEntrada", "pendente")).andReturn())
 
         then:
         confirmados.itens.size() == 1
@@ -364,7 +415,28 @@ class ContratoControllerSpec extends Specification {
         pendentes.itens.size() == 1
     }
 
-    @Unroll
+    def "filtra contratos por status do saldo final"() {
+        given:
+        def recebido = criarContrato()
+        criarContrato()
+        mockMvc.perform(put("/api/v1/contratos/${recebido.id}/pagamento-final")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([valor: 700.00, formaPagamento: "pix"])))
+                .andExpect(status().isOk())
+
+        when:
+        def confirmados = JsonCorpo.mapa(mockMvc.perform(get("/api/v1/contratos")
+                .param("statusSaldoFinal", "confirmado")).andReturn())
+        def pendentes = JsonCorpo.mapa(mockMvc.perform(get("/api/v1/contratos")
+                .param("statusSaldoFinal", "pendente")).andReturn())
+
+        then:
+        confirmados.itens.size() == 1
+        confirmados.itens[0].id == recebido.id
+        pendentes.itens.size() == 1
+        pendentes.itens[0].id != recebido.id
+    }
+
     def "busca contratos por #campo"() {
         given:
         def contrato = criarContrato()
