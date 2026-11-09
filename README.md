@@ -67,7 +67,7 @@ A suíte cobre:
 - processamento assíncrono de derivados com polling no frontend;
 - financeiro mensal com precedência de contrato, extras e exclusões;
 - dashboard operacional com agenda, contratos, galerias e financeiro;
-- migração incremental `V1 → V6` com backfill de dados existentes (`PostgresMigrationIT`);
+- migração incremental `V1 → V8` com backfill de dados existentes (`PostgresMigrationIT`);
 - congelamento das condições comerciais do pacote;
 - numeração de contratos (`CT-AAAA-0001`) e protocolos de aceite (`ACE-AAAA-0001`);
 - ciclo de vida do link público (geração, visualização, aceite, expiração e cancelamento);
@@ -111,6 +111,7 @@ com.ranny.fotografia
 - `src/main/resources/db/migration/V5__versao_editada.sql` adiciona `FOTO_EDITADA` ao catálogo e a origem (`ORIGINAL`/`EDITADA`) dos derivados.
 - `src/main/resources/db/migration/V6__liberacao_raw.sql` adiciona a liberação auditada de RAW na galeria e a versão baixada no histórico.
 - `src/main/resources/db/migration/V7__auth.sql` cria `usuarios`, `refresh_tokens` e `auth_eventos`.
+- `src/main/resources/db/migration/V8__invariantes_pagamento.sql` garante que `saldo_status = 'CONFIRMADO'` só exista quando `saldo_valor >= saldo_restante` em contratos e agendamentos.
 - O Flyway é a fonte de verdade do schema; o Hibernate apenas valida (`ddl-auto=validate`).
 - **Nunca edite uma migração já aplicada.** Mudanças entram em `V8__...`, `V9__...`, etc.
 - `spring.flyway.baseline-on-migrate=true` protege bancos não vazios sem histórico; em banco novo, a V1 é aplicada normalmente.

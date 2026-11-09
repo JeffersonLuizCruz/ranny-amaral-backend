@@ -96,6 +96,7 @@ public class DashboardService {
                 ensaiosSemana,
                 contratos.aguardandoAceite(),
                 contratos.entradaPendente(),
+                contratos.saldoPendente(),
                 galerias.emSelecao(),
                 galerias.selecaoEnviada(),
                 galerias.emEdicao(),
@@ -153,6 +154,12 @@ public class DashboardService {
             pendencias.add(new DashboardDtos.PendenciaResponse(
                     "FINANCEIRO", "Entradas pendentes",
                     resumo.contratosEntradaPendente() + " contrato(s) com entrada pendente.",
+                    "ALTA", "/financeiro"));
+        }
+        if (resumo.contratosSaldoPendente() > 0) {
+            pendencias.add(new DashboardDtos.PendenciaResponse(
+                    "FINANCEIRO", "Saldos finais pendentes",
+                    resumo.contratosSaldoPendente() + " contrato(s) com saldo final pendente.",
                     "ALTA", "/financeiro"));
         }
         if (resumo.extrasPendentes() > 0) {

@@ -53,6 +53,7 @@ class DashboardControllerSpec extends Specification {
         body.data == "2026-11-06"
         body.resumo.ensaiosHoje == 0
         body.resumo.ensaiosSemana == 0
+        body.resumo.contratosSaldoPendente == 0
         body.proximosEnsaios.size() == 0
         body.pendencias.size() == 0
         body.financeiroMes.mes == "2026-11"

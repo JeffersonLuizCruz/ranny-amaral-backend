@@ -24,6 +24,7 @@ public final class DashboardDtos {
             int ensaiosSemana,
             long contratosAguardandoAceite,
             long contratosEntradaPendente,
+            long contratosSaldoPendente,
             long galeriasEmSelecao,
             long galeriasAguardandoEdicao,
             long galeriasEmEdicao,
