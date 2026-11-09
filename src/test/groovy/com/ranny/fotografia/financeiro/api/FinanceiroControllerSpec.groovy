@@ -75,7 +75,8 @@ class FinanceiroControllerSpec extends Specification {
                 cliente.nome, 1, 0, new BigDecimal("50.00"))
         galeriaRepository.save(galeria)
         extrasRepository.save(PedidoExtras.criar(
-                galeria.id, "sel-fin-1", 1, new BigDecimal("50.00"), new BigDecimal("50.00")))
+                galeria.id, "sel-fin-1", 1, new BigDecimal("50.00"), new BigDecimal("50.00"),
+                null, null))
 
         Cenario.agendamento(agendamentoRepository, cliente, pacote,
                 OffsetDateTime.parse("2026-11-20T10:00:00-03:00"), StatusAgendamento.CANCELADO)

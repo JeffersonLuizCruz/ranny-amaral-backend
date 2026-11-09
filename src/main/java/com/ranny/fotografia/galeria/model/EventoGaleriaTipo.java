@@ -18,5 +18,6 @@ public enum EventoGaleriaTipo {
     RAW_LIBERADO,
     RAW_REVOGADO,
     DOWNLOAD_REGISTRADO,
+    COMPROVANTE_EXTRAS_ENVIADO,
     CANCELADA
 }

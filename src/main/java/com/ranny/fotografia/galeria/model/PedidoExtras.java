@@ -71,11 +71,27 @@ public class PedidoExtras {
     @Column(name = "liberado_em")
     private Instant liberadoEm;
 
+    @Column(name = "chave_pix", length = 180)
+    private String chavePix;
+
+    @Column(name = "instrucoes_pagamento", length = 1500)
+    private String instrucoesPagamento;
+
+    @Column(name = "comprovante_arquivo_id", length = 64)
+    private String comprovanteArquivoId;
+
+    @Column(name = "comprovante_nome", length = 255)
+    private String comprovanteNome;
+
+    @Column(name = "comprovante_enviado_em")
+    private Instant comprovanteEnviadoEm;
+
     @Embedded
     private Auditoria auditoria;
 
     public static PedidoExtras criar(String galeriaId, String selecaoId, int quantidade,
-                                     BigDecimal valorUnitario, BigDecimal valorTotal) {
+                                     BigDecimal valorUnitario, BigDecimal valorTotal,
+                                     String chavePix, String instrucoesPagamento) {
         PedidoExtras pedido = new PedidoExtras();
         pedido.id = UUID.randomUUID().toString();
         pedido.galeriaId = galeriaId;
@@ -83,6 +99,8 @@ public class PedidoExtras {
         pedido.quantidadeFotos = quantidade;
         pedido.valorUnitario = valorUnitario;
         pedido.valorTotal = valorTotal;
+        pedido.chavePix = chavePix;
+        pedido.instrucoesPagamento = instrucoesPagamento;
         pedido.status = PedidoExtrasStatus.PENDENTE;
         pedido.auditoria = Auditoria.iniciar();
         return pedido;
@@ -113,6 +131,13 @@ public class PedidoExtras {
 
     public void cancelar() {
         this.status = PedidoExtrasStatus.CANCELADO;
+        this.auditoria.marcarAtualizacao();
+    }
+
+    public void anexarComprovante(String arquivoId, String nome, Instant enviadoEm) {
+        this.comprovanteArquivoId = arquivoId;
+        this.comprovanteNome = nome;
+        this.comprovanteEnviadoEm = enviadoEm;
         this.auditoria.marcarAtualizacao();
     }
 

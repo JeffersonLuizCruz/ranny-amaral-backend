@@ -91,6 +91,21 @@ final class Cenario {
                 .orElseGet({ repository.save(EstudioConfig.padrao()) })
     }
 
+    static EstudioConfig estudioComExtras(EstudioConfigRepository repository,
+                                          String chavePixExtras = "pix-extras@teste.com",
+                                          String instrucoesExtras =
+                                                  "Pague as fotos extras via Pix e anexe o comprovante.") {
+        EstudioConfig estudio = estudio(repository)
+        estudio.atualizar(
+                estudio.nome, estudio.razaoSocial, estudio.cnpj, estudio.endereco,
+                estudio.cidade, estudio.estado, estudio.email, estudio.telefone,
+                estudio.responsavel, estudio.site, estudio.foro,
+                estudio.percentualEntradaPadrao, estudio.chavePix,
+                estudio.instrucoesPagamento, chavePixExtras, instrucoesExtras,
+                estudio.prazoPagamentoDias)
+        return repository.saveAndFlush(estudio)
+    }
+
     static OffsetDateTime amanhaAsDez() {
         return OffsetDateTime.now()
                 .plusDays(1)

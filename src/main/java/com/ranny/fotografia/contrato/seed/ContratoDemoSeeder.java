@@ -92,6 +92,8 @@ public class ContratoDemoSeeder implements ApplicationRunner {
                         new BigDecimal("30.00"),
                         "pix@photoizer.com.br",
                         "Pague a entrada via Pix e anexe o comprovante nesta página. O saldo restante pode ser quitado no dia do ensaio.",
+                        "pix-extras@photoizer.com.br",
+                        "Pague as fotos extras via Pix e anexe o comprovante na galeria.",
                         3)));
 
         ModeloContrato modelo = modeloRepository.findById(DadosDemo.MODELO_PADRAO)

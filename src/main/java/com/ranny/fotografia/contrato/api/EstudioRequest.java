@@ -53,6 +53,12 @@ public record EstudioRequest(
         @Size(max = 1500, message = "deve ter no maximo 1500 caracteres")
         String instrucoesPagamento,
 
+        @Size(max = 180, message = "deve ter no maximo 180 caracteres")
+        String chavePixExtras,
+
+        @Size(max = 1500, message = "deve ter no maximo 1500 caracteres")
+        String instrucoesPagamentoExtras,
+
         @PositiveOrZero(message = "deve ser maior ou igual a zero")
         Integer prazoPagamentoDias
 ) {

@@ -174,9 +174,16 @@ public final class GaleriaDtos {
             String confirmadoPor,
             String liberacaoMotivo,
             String liberadoPor,
-            Instant liberadoEm
+            Instant liberadoEm,
+            String chavePix,
+            String instrucoesPagamento,
+            String comprovanteNome,
+            Instant comprovanteEnviadoEm,
+            String comprovanteUrl
     ) {
-        public static PedidoExtrasResponse de(PedidoExtras pedido) {
+        public static PedidoExtrasResponse de(PedidoExtras pedido, String chavePix,
+                                              String instrucoesPagamento,
+                                              String comprovanteUrl) {
             return new PedidoExtrasResponse(
                     pedido.getId(),
                     pedido.getQuantidadeFotos(),
@@ -189,7 +196,12 @@ public final class GaleriaDtos {
                     pedido.getConfirmadoPor(),
                     pedido.getLiberacaoMotivo(),
                     pedido.getLiberadoPor(),
-                    pedido.getLiberadoEm());
+                    pedido.getLiberadoEm(),
+                    chavePix,
+                    instrucoesPagamento,
+                    pedido.getComprovanteNome(),
+                    pedido.getComprovanteEnviadoEm(),
+                    comprovanteUrl);
         }
     }
 
@@ -250,6 +262,18 @@ public final class GaleriaDtos {
     }
 
     public record ConcluirMidiaEditadaUploadRequest(@NotNull List<ParteRequest> partes) {
+    }
+
+    /** Upload do comprovante Pix dos extras; referencia o pedido pendente. */
+    public record IniciarComprovanteExtrasRequest(
+            @NotBlank String nomeArquivo,
+            @NotBlank String mimeType,
+            long tamanho,
+            @NotBlank String checksumSha256
+    ) {
+    }
+
+    public record ConcluirComprovanteExtrasRequest(@NotNull List<ParteRequest> partes) {
     }
 
     public record ParteRequest(int partNumber, String etag) {

@@ -231,11 +231,15 @@ bucket. O download do staff agora é protegido pelo JWT.
 - O payload público só expõe a URL do original quando o RAW foi liberado; downloads individuais e ZIP
   passam pelo endpoint que valida o gate e registra o evento.
 - `GET /api/v1/public/galerias/{token}/download-zip/validar` valida o lote antes do streaming.
+- Extras usam uma **chave Pix própria do estúdio**, separada da chave do ensaio, e o pedido guarda um
+  snapshot dessa chave. O cliente envia o comprovante Pix pelo link de seleção; o staff confirma o
+  recebimento antes de iniciar a edição.
 - Regras:
   - ensaio realizado e pagamentos quitados para publicar a seleção;
   - fotos selecionadas ≥ fotos inclusas;
   - vídeos exatamente iguais aos inclusos;
   - fotos extras geram pedido de extras;
+  - confirmação Pix dos extras exige comprovante;
   - entrega exige extras pagos ou isentos.
 - Rotas administrativas e públicas estão em `/api/v1/galerias` e `/api/v1/public/galerias`.
 

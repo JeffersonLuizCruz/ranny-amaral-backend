@@ -20,6 +20,8 @@ public record EstudioResponse(
         BigDecimal percentualEntradaPadrao,
         String chavePix,
         String instrucoesPagamento,
+        String chavePixExtras,
+        String instrucoesPagamentoExtras,
         Integer prazoPagamentoDias
 ) {
 
@@ -39,6 +41,8 @@ public record EstudioResponse(
                 estudio.getPercentualEntradaPadrao(),
                 estudio.getChavePix(),
                 estudio.getInstrucoesPagamento(),
+                estudio.getChavePixExtras(),
+                estudio.getInstrucoesPagamentoExtras(),
                 estudio.getPrazoPagamentoDias());
     }
 }

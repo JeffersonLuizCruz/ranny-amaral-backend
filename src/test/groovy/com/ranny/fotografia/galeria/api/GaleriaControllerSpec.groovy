@@ -6,6 +6,7 @@ import com.ranny.fotografia.arquivo.storage.FakeObjectStorage
 import com.ranny.fotografia.cliente.repository.ClienteRepository
 import com.ranny.fotografia.galeria.model.MidiaStatus
 import com.ranny.fotografia.galeria.model.MidiaTipo
+import com.ranny.fotografia.contrato.repository.EstudioConfigRepository
 import com.ranny.fotografia.galeria.repository.DownloadGaleriaRepository
 import com.ranny.fotografia.galeria.repository.MidiaGaleriaRepository
 import com.ranny.fotografia.pacote.repository.PacoteRepository
@@ -59,6 +60,9 @@ class GaleriaControllerSpec extends Specification {
 
     @Autowired
     DownloadGaleriaRepository downloadRepository
+
+    @Autowired
+    EstudioConfigRepository estudioRepository
 
     def "nao publica selecao de ensaio nao realizado"() {
         given:
@@ -566,8 +570,79 @@ class GaleriaControllerSpec extends Specification {
         downloadRepository.count() == 1
     }
 
+    def "publica extras com chave pix e comprovante"() {
+        given:
+        Cenario.estudioComExtras(estudioRepository)
+        def preparado = prepararGaleriaComSelecao("Cliente Extras Pix", true, false, true)
+
+        def publica = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/public/galerias/${preparado.linkToken}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        def comprovante = "%PDF-1.7\ncomprovante".getBytes("US-ASCII")
+        storage.simular(comprovante.length, "application/pdf", comprovante)
+
+        when:
+        def sessao = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/public/galerias/${preparado.linkToken}/extras/comprovante/upload")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                nomeArquivo   : "comprovante.pdf",
+                                mimeType      : "application/pdf",
+                                tamanho       : comprovante.length,
+                                checksumSha256: sha256(comprovante)
+                        ])))
+                .andExpect(status().isOk())
+                .andReturn())
+        def concluido = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/public/galerias/${preparado.linkToken}/extras/comprovante/upload/${sessao.arquivoId}/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([partes: []])))
+                .andExpect(status().isOk())
+                .andReturn())
+        def confirmado = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/extras/confirmar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([formaPagamento: "pix", confirmadoPor: "Teste"])))
+                .andExpect(status().isOk())
+                .andReturn())
+        def detalhe = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        publica.extras.status == "pendente"
+        publica.extras.chavePix == "pix-extras@teste.com"
+        publica.extras.comprovanteNome == null
+        concluido.comprovanteNome == "comprovante.pdf"
+        concluido.comprovanteEnviadoEm != null
+        confirmado.status == "pago"
+        detalhe.extras.comprovanteUrl != null
+    }
+
+    def "nao confirma pix sem comprovante"() {
+        given:
+        Cenario.estudioComExtras(estudioRepository)
+        def preparado = prepararGaleriaComSelecao(
+                "Cliente Extras Sem Comprovante", true, false, true)
+
+        when:
+        def resultado = mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/extras/confirmar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([formaPagamento: "pix", confirmadoPor: "Teste"])))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "COMPROVANTE_OBRIGATORIO"
+    }
+
     private Map prepararGaleriaComSelecao(String nomeCliente, boolean comExtra = false,
-                                          boolean comVideo = false) {
+                                          boolean comVideo = false,
+                                          boolean selecionarExtra = false) {
         def cliente = Cenario.cliente(clienteRepository, nomeCliente)
         def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0)
         def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
@@ -602,13 +677,15 @@ class GaleriaControllerSpec extends Specification {
                 post("/api/v1/galerias/${galeria.id}/selecao/publicar"))
                 .andExpect(status().isOk())
                 .andReturn())
+        def fotoIds = selecionarExtra && extraMidiaId != null
+                ? [midiaId, extraMidiaId] : [midiaId]
         mockMvc.perform(post("/api/v1/public/galerias/${link.token}/selecao")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(JsonCorpo.json([fotoIds: [midiaId], videoIds: []])))
+                .content(JsonCorpo.json([fotoIds: fotoIds, videoIds: []])))
                 .andExpect(status().isOk())
 
         return [galeriaId: galeria.id, midiaId: midiaId,
-                extraMidiaId: extraMidiaId, videoId: videoId]
+                extraMidiaId: extraMidiaId, videoId: videoId, linkToken: link.token]
     }
 
     def "baixa zip com versoes editadas e originais"() {

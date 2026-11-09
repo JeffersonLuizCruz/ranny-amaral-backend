@@ -4,6 +4,7 @@ import com.ranny.fotografia.agenda.AgendamentoConsulta;
 import com.ranny.fotografia.arquivo.ArquivoFinalidade;
 import com.ranny.fotografia.arquivo.ArquivoUpload;
 import com.ranny.fotografia.cliente.ClienteConsulta;
+import com.ranny.fotografia.contrato.EstudioConsulta;
 import com.ranny.fotografia.galeria.GaleriaConsulta;
 import com.ranny.fotografia.galeria.event.MidiaProcessamentoEvent;
 import com.ranny.fotografia.galeria.api.GaleriaDtos;
@@ -37,6 +38,7 @@ import com.ranny.fotografia.galeria.repository.SelecaoItemRepository;
 import com.ranny.fotografia.shared.api.PaginaResponse;
 import com.ranny.fotografia.shared.api.Paginacao;
 import com.ranny.fotografia.shared.exception.RecursoExpiradoException;
+import com.ranny.fotografia.shared.model.FormaPagamentoSaldo;
 import com.ranny.fotografia.shared.exception.RecursoNaoEncontradoException;
 import com.ranny.fotografia.shared.exception.RegraDeNegocioException;
 import org.slf4j.Logger;
@@ -95,6 +97,7 @@ public class GaleriaService implements GaleriaConsulta {
     private final EventoGaleriaRepository eventoRepository;
     private final AgendamentoConsulta agendamentoConsulta;
     private final ClienteConsulta clienteConsulta;
+    private final EstudioConsulta estudioConsulta;
     private final ArquivoUpload arquivoUpload;
     private final ProcessadorMidia processadorMidia;
     private final ApplicationEventPublisher eventos;
@@ -111,6 +114,7 @@ public class GaleriaService implements GaleriaConsulta {
                           EventoGaleriaRepository eventoRepository,
                           AgendamentoConsulta agendamentoConsulta,
                           ClienteConsulta clienteConsulta,
+                          EstudioConsulta estudioConsulta,
                           ArquivoUpload arquivoUpload,
                           ProcessadorMidia processadorMidia,
                           ApplicationEventPublisher eventos,
@@ -127,6 +131,7 @@ public class GaleriaService implements GaleriaConsulta {
         this.eventoRepository = eventoRepository;
         this.agendamentoConsulta = agendamentoConsulta;
         this.clienteConsulta = clienteConsulta;
+        this.estudioConsulta = estudioConsulta;
         this.arquivoUpload = arquivoUpload;
         this.processadorMidia = processadorMidia;
         this.eventos = eventos;
@@ -197,7 +202,7 @@ public class GaleriaService implements GaleriaConsulta {
                 response(galeria),
                 links,
                 selecao == null ? null : selecaoResponse(selecao),
-                extras == null ? null : GaleriaDtos.PedidoExtrasResponse.de(extras),
+                extras == null ? null : extrasResponse(extras, true),
                 historico);
     }
 
@@ -508,9 +513,12 @@ public class GaleriaService implements GaleriaConsulta {
 
         PedidoExtras pedido = null;
         if (extras > 0) {
+            EstudioConsulta.DadosPagamentoExtras pagamentoExtras =
+                    estudioConsulta.dadosPagamentoExtras();
             pedido = extrasRepository.save(PedidoExtras.criar(
                     galeria.getId(), selecao.getId(), extras,
-                    galeria.getValorFotoExtra(), valorExtras));
+                    galeria.getValorFotoExtra(), valorExtras,
+                    pagamentoExtras.chavePix(), pagamentoExtras.instrucoesPagamento()));
         }
         galeria.registrarSelecao(selecao.getId(), pedido == null ? null : pedido.getId());
         evento(galeria, EventoGaleriaTipo.SELECAO_ENVIADA,
@@ -530,11 +538,16 @@ public class GaleriaService implements GaleriaConsulta {
             throw new RegraDeNegocioException("EXTRAS_NAO_PENDENTES",
                     "Este pedido de extras nao esta pendente.");
         }
+        if (request.formaPagamento() == FormaPagamentoSaldo.PIX
+                && pedido.getComprovanteArquivoId() == null) {
+            throw new RegraDeNegocioException("COMPROVANTE_OBRIGATORIO",
+                    "O cliente precisa enviar o comprovante Pix dos extras.");
+        }
         pedido.pagar(request.formaPagamento(),
                 request.confirmadoPor() == null ? "Equipe do estudio" : request.confirmadoPor());
         galeria.iniciarEdicao();
         evento(galeria, EventoGaleriaTipo.EXTRAS_CONFIRMADOS, "Extras confirmados.");
-        return GaleriaDtos.PedidoExtrasResponse.de(pedido);
+        return extrasResponse(pedido, true);
     }
 
     @Transactional
@@ -546,7 +559,7 @@ public class GaleriaService implements GaleriaConsulta {
         pedido.isentar(por == null ? "Equipe do estudio" : por);
         galeria.iniciarEdicao();
         evento(galeria, EventoGaleriaTipo.EXTRAS_ISENTOS, "Extras isentos.");
-        return GaleriaDtos.PedidoExtrasResponse.de(pedido);
+        return extrasResponse(pedido, true);
     }
 
     @Transactional
@@ -560,7 +573,87 @@ public class GaleriaService implements GaleriaConsulta {
         galeria.iniciarEdicao();
         evento(galeria, EventoGaleriaTipo.EDICAO_INICIADA,
                 "Edicao liberada manualmente: " + request.motivo());
-        return GaleriaDtos.PedidoExtrasResponse.de(pedido);
+        return extrasResponse(pedido, true);
+    }
+
+    @Transactional
+    public GaleriaDtos.UploadSessaoResponse iniciarComprovanteExtras(
+            String token, GaleriaDtos.IniciarComprovanteExtrasRequest request) {
+        LinkGaleria link = linkAtivo(token, LinkGaleriaTipo.SELECAO);
+        Galeria galeria = obter(link.getGaleriaId());
+        PedidoExtras pedido = pedidoPendente(galeria.getId());
+        ArquivoUpload.IniciarUpload comando = new ArquivoUpload.IniciarUpload(
+                ArquivoFinalidade.COMPROVANTE_PAGAMENTO,
+                pedido.getId(),
+                "estudios/%s/galerias/%s/extras/%s".formatted(
+                        galeria.getEstudioId(), galeria.getId(), pedido.getId()),
+                request.nomeArquivo(),
+                request.mimeType(),
+                request.tamanho(),
+                request.checksumSha256(),
+                arquivoUpload.tamanhoMaximo(ArquivoFinalidade.COMPROVANTE_PAGAMENTO));
+        return GaleriaDtos.UploadSessaoResponse.de(arquivoUpload.iniciar(comando));
+    }
+
+    @Transactional
+    public GaleriaDtos.PedidoExtrasResponse concluirComprovanteExtras(
+            String token, String arquivoId,
+            GaleriaDtos.ConcluirComprovanteExtrasRequest request) {
+        LinkGaleria link = linkAtivo(token, LinkGaleriaTipo.SELECAO);
+        Galeria galeria = obter(link.getGaleriaId());
+        PedidoExtras pedido = pedidoPendente(galeria.getId());
+        List<ArquivoUpload.ParteEnviada> partes = request.partes().stream()
+                .map(parte -> new ArquivoUpload.ParteEnviada(parte.partNumber(), parte.etag()))
+                .toList();
+        ArquivoUpload.ArquivoResumo arquivo = arquivoUpload.concluir(
+                arquivoId, ArquivoFinalidade.COMPROVANTE_PAGAMENTO, pedido.getId(), partes);
+        pedido.anexarComprovante(arquivo.id(), arquivo.nomeOriginal(), Instant.now());
+        evento(galeria, EventoGaleriaTipo.COMPROVANTE_EXTRAS_ENVIADO,
+                "Comprovante dos extras enviado: " + arquivo.nomeOriginal());
+        return extrasResponse(pedido, false);
+    }
+
+    @Transactional
+    public void abortarComprovanteExtras(String token, String arquivoId) {
+        LinkGaleria link = linkAtivo(token, LinkGaleriaTipo.SELECAO);
+        Galeria galeria = obter(link.getGaleriaId());
+        PedidoExtras pedido = pedidoPendente(galeria.getId());
+        arquivoUpload.abortar(arquivoId, ArquivoFinalidade.COMPROVANTE_PAGAMENTO,
+                pedido.getId());
+    }
+
+    private PedidoExtras pedidoPendente(String galeriaId) {
+        PedidoExtras pedido = extrasRepository
+                .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeriaId)
+                .orElseThrow(() -> new RegraDeNegocioException("SEM_EXTRAS",
+                        "Esta galeria nao possui pedido de extras."));
+        if (pedido.getStatus() != PedidoExtrasStatus.PENDENTE) {
+            throw new RegraDeNegocioException("EXTRAS_NAO_PENDENTES",
+                    "Este pedido de extras nao esta pendente.");
+        }
+        return pedido;
+    }
+
+    private GaleriaDtos.PedidoExtrasResponse extrasResponse(PedidoExtras pedido,
+                                                             boolean incluirComprovanteUrl) {
+        String chavePix = pedido.getChavePix();
+        String instrucoes = pedido.getInstrucoesPagamento();
+        if (chavePix == null || instrucoes == null) {
+            EstudioConsulta.DadosPagamentoExtras dados = estudioConsulta.dadosPagamentoExtras();
+            if (chavePix == null) {
+                chavePix = dados.chavePix();
+            }
+            if (instrucoes == null) {
+                instrucoes = dados.instrucoesPagamento();
+            }
+        }
+        String comprovanteUrl = null;
+        if (incluirComprovanteUrl && pedido.getComprovanteArquivoId() != null) {
+            comprovanteUrl = urlOuNull(pedido.getComprovanteArquivoId(),
+                    ArquivoFinalidade.COMPROVANTE_PAGAMENTO, pedido.getId());
+        }
+        return GaleriaDtos.PedidoExtrasResponse.de(
+                pedido, chavePix, instrucoes, comprovanteUrl);
     }
 
     @Transactional
@@ -688,7 +781,7 @@ public class GaleriaService implements GaleriaConsulta {
                 midias.stream().map(midia -> midiaResponse(midia, galeria.getId(),
                         exporOriginal)).toList(),
                 selecao == null ? null : selecaoResponse(selecao),
-                extras == null ? null : GaleriaDtos.PedidoExtrasResponse.de(extras),
+                extras == null ? null : extrasResponse(extras, false),
                 link.getTipo() == LinkGaleriaTipo.ENTREGA
                         && galeria.getStatus() == GaleriaStatus.ENTREGUE);
     }

@@ -46,6 +46,31 @@ public class GaleriaPublicaController {
                 ip(http), userAgent(http));
     }
 
+    @PostMapping("/{token}/extras/comprovante/upload")
+    @Operation(summary = "Inicia o upload do comprovante Pix dos extras")
+    public GaleriaDtos.UploadSessaoResponse iniciarComprovanteExtras(
+            @PathVariable String token,
+            @Valid @RequestBody GaleriaDtos.IniciarComprovanteExtrasRequest request) {
+        return galeriaService.iniciarComprovanteExtras(token, request);
+    }
+
+    @PostMapping("/{token}/extras/comprovante/upload/{arquivoId}/complete")
+    @Operation(summary = "Conclui o upload do comprovante Pix dos extras")
+    public GaleriaDtos.PedidoExtrasResponse concluirComprovanteExtras(
+            @PathVariable String token,
+            @PathVariable String arquivoId,
+            @Valid @RequestBody GaleriaDtos.ConcluirComprovanteExtrasRequest request) {
+        return galeriaService.concluirComprovanteExtras(token, arquivoId, request);
+    }
+
+    @PostMapping("/{token}/extras/comprovante/upload/{arquivoId}/abort")
+    @Operation(summary = "Aborta o upload do comprovante Pix dos extras")
+    public void abortarComprovanteExtras(
+            @PathVariable String token,
+            @PathVariable String arquivoId) {
+        galeriaService.abortarComprovanteExtras(token, arquivoId);
+    }
+
     @PostMapping("/{token}/download")
     @Operation(summary = "Gera a URL assinada de download e registra o evento")
     public GaleriaDtos.DownloadResponse baixar(

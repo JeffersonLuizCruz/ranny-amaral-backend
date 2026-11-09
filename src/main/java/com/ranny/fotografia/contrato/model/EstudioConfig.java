@@ -80,6 +80,12 @@ public class EstudioConfig {
     @Column(name = "instrucoes_pagamento", length = 1500)
     private String instrucoesPagamento;
 
+    @Column(name = "chave_pix_extras", length = 180)
+    private String chavePixExtras;
+
+    @Column(name = "instrucoes_pagamento_extras", length = 1500)
+    private String instrucoesPagamentoExtras;
+
     @Column(name = "prazo_pagamento_dias")
     private Integer prazoPagamentoDias;
 
@@ -91,7 +97,7 @@ public class EstudioConfig {
         estudio.id = ID;
         estudio.auditoria = Auditoria.iniciar();
         estudio.aplicar("Estudio Fotografico", null, null, null, null, null, null, null,
-                null, null, null, BigDecimal.valueOf(30), null, null, 3);
+                null, null, null, BigDecimal.valueOf(30), null, null, null, null, 3);
         return estudio;
     }
 
@@ -100,13 +106,14 @@ public class EstudioConfig {
                                           String cidade, String estado, String email, String telefone,
                                           String responsavel, String site, String foro,
                                           BigDecimal percentualEntradaPadrao, String chavePix,
-                                          String instrucoesPagamento, Integer prazoPagamentoDias) {
+                                          String instrucoesPagamento, String chavePixExtras,
+                                          String instrucoesPagamentoExtras, Integer prazoPagamentoDias) {
         EstudioConfig estudio = new EstudioConfig();
         estudio.id = ID;
         estudio.auditoria = Auditoria.iniciar();
         estudio.aplicar(nome, razaoSocial, cnpj, endereco, cidade, estado, email, telefone,
                 responsavel, site, foro, percentualEntradaPadrao, chavePix, instrucoesPagamento,
-                prazoPagamentoDias);
+                chavePixExtras, instrucoesPagamentoExtras, prazoPagamentoDias);
         return estudio;
     }
 
@@ -114,10 +121,11 @@ public class EstudioConfig {
                           String cidade, String estado, String email, String telefone,
                           String responsavel, String site, String foro,
                           BigDecimal percentualEntradaPadrao, String chavePix,
-                          String instrucoesPagamento, Integer prazoPagamentoDias) {
+                          String instrucoesPagamento, String chavePixExtras,
+                          String instrucoesPagamentoExtras, Integer prazoPagamentoDias) {
         aplicar(nome, razaoSocial, cnpj, endereco, cidade, estado, email, telefone,
                 responsavel, site, foro, percentualEntradaPadrao, chavePix, instrucoesPagamento,
-                prazoPagamentoDias);
+                chavePixExtras, instrucoesPagamentoExtras, prazoPagamentoDias);
         auditoria.marcarAtualizacao();
     }
 
@@ -125,7 +133,8 @@ public class EstudioConfig {
                          String cidade, String estado, String email, String telefone,
                          String responsavel, String site, String foro,
                          BigDecimal percentualEntradaPadrao, String chavePix,
-                         String instrucoesPagamento, Integer prazoPagamentoDias) {
+                         String instrucoesPagamento, String chavePixExtras,
+                         String instrucoesPagamentoExtras, Integer prazoPagamentoDias) {
         this.nome = nome;
         this.razaoSocial = razaoSocial;
         this.cnpj = cnpj;
@@ -142,6 +151,8 @@ public class EstudioConfig {
                 : percentualEntradaPadrao;
         this.chavePix = chavePix;
         this.instrucoesPagamento = instrucoesPagamento;
+        this.chavePixExtras = chavePixExtras;
+        this.instrucoesPagamentoExtras = instrucoesPagamentoExtras;
         this.prazoPagamentoDias = prazoPagamentoDias;
     }
 }

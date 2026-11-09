@@ -1,5 +1,6 @@
 package com.ranny.fotografia.contrato.service;
 
+import com.ranny.fotografia.contrato.EstudioConsulta;
 import com.ranny.fotografia.contrato.api.EstudioRequest;
 import com.ranny.fotografia.contrato.model.EstudioConfig;
 import com.ranny.fotografia.contrato.repository.EstudioConfigRepository;
@@ -14,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
  * inicializacao.
  */
 @Service
-public class EstudioService {
+public class EstudioService implements EstudioConsulta {
 
     private final EstudioConfigRepository estudioRepository;
 
@@ -46,7 +47,19 @@ public class EstudioService {
                 request.percentualEntradaPadrao(),
                 request.chavePix(),
                 request.instrucoesPagamento(),
+                request.chavePixExtras(),
+                request.instrucoesPagamentoExtras(),
                 request.prazoPagamentoDias());
         return estudio;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DadosPagamentoExtras dadosPagamentoExtras() {
+        return estudioRepository.findById(EstudioConfig.ID)
+                .map(estudio -> new DadosPagamentoExtras(
+                        estudio.getChavePixExtras(),
+                        estudio.getInstrucoesPagamentoExtras()))
+                .orElseGet(() -> new DadosPagamentoExtras(null, null));
     }
 }
