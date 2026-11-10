@@ -116,8 +116,9 @@ com.ranny.fotografia
 - `src/main/resources/db/migration/V10__numeracao_midias.sql` renumera as mídias existentes e cria a constraint única de `(galeria_id, tipo, ordem)`.
 - `src/main/resources/db/migration/V11__download_selecao_staff.sql` cria os tokens de curta duração para o staff baixar as fotos selecionadas.
 - `src/main/resources/db/migration/V12__faixas_foto_extra.sql` adiciona as faixas progressivas de preço da foto extra no catálogo e os snapshots JSON em agendamentos, galerias e pedidos de extras.
+- `src/main/resources/db/migration/V13__zip_baixado_galeria.sql` adiciona `zip_baixado_em` na galeria, com backfill dos ZIPs antigos a partir do histórico.
 - O Flyway é a fonte de verdade do schema; o Hibernate apenas valida (`ddl-auto=validate`).
-- **Nunca edite uma migração já aplicada.** Mudanças entram em `V13__...`, `V14__...`, etc.
+- **Nunca edite uma migração já aplicada.** Mudanças entram em `V14__...`, `V15__...`, etc.
 - `spring.flyway.baseline-on-migrate=true` protege bancos não vazios sem histórico; em banco novo, a V1 é aplicada normalmente.
 - O evento de contrato é compacto (chaves JSON curtas) para caber no `serialized_event varchar(255)`; `EventSerializationSpec` garante o limite.
 
@@ -188,6 +189,7 @@ Resposta padrão:
 - Contratos: busca em número, nome do cliente e nome do pacote (colunas desnormalizadas na V2), além de `statusAceite`, `statusEntrada`, `statusSaldoFinal`, `clienteId` e `agendamentoId`. A resposta também expõe `entradaQuitada`, `saldoQuitado`, `quitado`, `valorRecebido` e `valorPendente`.
 - Agendamentos: a resposta também expõe `statusEntrada`, `statusSaldoFinal`, `entradaQuitada`, `saldoQuitado`, `quitado`, `valorRecebido` e `valorPendente`, com os mesmos campos derivados do contrato.
 - Agenda: `GET /api/v1/agenda` é paginado e aceita `inicio`/`fim`/`status`. O calendário usa `GET /api/v1/agenda/calendario?inicio=...&fim=...`, que exige o período completo.
+- Galerias: `GET /api/v1/galerias` aceita `status`, `q` e `baixada`. `baixada=true` filtra apenas galerias cujo ZIP da entrega já foi baixado pelo cliente (download individual não conta); `baixada=false` faz o inverso. A resposta expõe `zipBaixadoEm`.
 
 ## Upload de comprovantes
 

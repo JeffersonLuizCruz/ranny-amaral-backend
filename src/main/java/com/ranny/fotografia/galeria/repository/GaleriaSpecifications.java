@@ -24,4 +24,14 @@ public final class GaleriaSpecifications {
         String like = "%" + termo.trim().toLowerCase(Locale.ROOT) + "%";
         return (root, query, cb) -> cb.like(cb.lower(root.get("clienteNome")), like);
     }
+
+    /** Filtra galerias com (ou sem) o ZIP da entrega baixado pelo cliente. */
+    public static Specification<Galeria> comZipBaixado(Boolean baixada) {
+        if (baixada == null) {
+            return null;
+        }
+        return baixada
+                ? (root, query, cb) -> cb.isNotNull(root.get("zipBaixadoEm"))
+                : (root, query, cb) -> cb.isNull(root.get("zipBaixadoEm"));
+    }
 }

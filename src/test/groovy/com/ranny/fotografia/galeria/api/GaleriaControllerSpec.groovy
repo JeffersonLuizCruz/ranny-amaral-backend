@@ -573,6 +573,63 @@ class GaleriaControllerSpec extends Specification {
         downloadRepository.count() == 1
     }
 
+    def "filtra baixadas somente apos download do zip da entrega"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Filtro Baixadas")
+        enviarVersaoEditada(preparado, Color.BLUE)
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
+                .andExpect(status().isOk())
+        def entrega = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        when:
+        def antes = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias").param("baixada", "true"))
+                .andExpect(status().isOk())
+                .andReturn())
+        mockMvc.perform(
+                post("/api/v1/public/galerias/${entrega.token}/download")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                midiaId: preparado.midiaId, versao: "editada"])))
+                .andExpect(status().isOk())
+        def aposIndividual = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias").param("baixada", "true"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def detalheIndividual = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+        mockMvc.perform(get("/api/v1/public/galerias/${entrega.token}/download-zip")
+                .param("versao", "editada"))
+                .andExpect(status().isOk())
+        def aposZip = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias").param("baixada", "true"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def semZip = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias").param("baixada", "false"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def detalheZip = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        antes.totalItens == 0
+        aposIndividual.totalItens == 0
+        detalheIndividual.galeria.zipBaixadoEm == null
+        aposZip.totalItens == 1
+        semZip.totalItens == 0
+        detalheZip.galeria.zipBaixadoEm != null
+    }
+
     def "numera fotos em sequencia e nao reutiliza numero apos remocao"() {
         given:
         def cliente = Cenario.cliente(clienteRepository, "Cliente Numeracao")

@@ -37,9 +37,10 @@ public class GaleriaController {
     public PaginaResponse<GaleriaDtos.GaleriaResponse> listar(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) Boolean baixada,
             @RequestParam(required = false) Integer pagina,
             @RequestParam(required = false) Integer tamanho) {
-        return galeriaService.listar(status, q, pagina, tamanho);
+        return galeriaService.listar(status, q, baixada, pagina, tamanho);
     }
 
     @GetMapping("/{id}")

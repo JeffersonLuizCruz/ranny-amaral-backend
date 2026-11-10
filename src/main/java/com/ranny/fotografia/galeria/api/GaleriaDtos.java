@@ -42,13 +42,14 @@ public final class GaleriaDtos {
             boolean rawLiberado,
             Instant rawLiberadoEm,
             String rawLiberadoPor,
+            Instant zipBaixadoEm,
             String capaUrl,
             Instant createdAt,
             Instant updatedAt
     ) {
         public static GaleriaResponse de(Galeria galeria, long totalFotos, long totalVideos,
                                          long fotosDisponiveis, long videosDisponiveis,
-                                         String capaUrl) {
+                                         String capaUrl, Instant zipBaixadoEm) {
             return new GaleriaResponse(
                     galeria.getId(),
                     galeria.getAgendamentoId(),
@@ -69,6 +70,7 @@ public final class GaleriaDtos {
                     galeria.isRawLiberado(),
                     galeria.getRawLiberadoEm(),
                     galeria.getRawLiberadoPor(),
+                    zipBaixadoEm,
                     capaUrl,
                     galeria.getAuditoria().getCriadoEm(),
                     galeria.getAuditoria().getAtualizadoEm());

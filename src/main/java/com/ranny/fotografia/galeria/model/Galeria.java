@@ -90,6 +90,9 @@ public class Galeria {
     @Column(name = "raw_liberado_por", length = 120)
     private String rawLiberadoPor;
 
+    @Column(name = "zip_baixado_em")
+    private Instant zipBaixadoEm;
+
     @Embedded
     private Auditoria auditoria;
 
@@ -187,6 +190,19 @@ public class Galeria {
         this.rawLiberadoEm = null;
         this.rawLiberadoPor = null;
         this.auditoria.marcarAtualizacao();
+    }
+
+    /**
+     * Registra o primeiro download do ZIP da entrega pelo cliente.
+     *
+     * <p>Download individual nao marca a galeria; apenas o lote completo conta
+     * para o filtro operacional "Baixadas".
+     */
+    public void registrarZipBaixado() {
+        if (this.zipBaixadoEm == null) {
+            this.zipBaixadoEm = Instant.now();
+            this.auditoria.marcarAtualizacao();
+        }
     }
 
     public void cancelar() {

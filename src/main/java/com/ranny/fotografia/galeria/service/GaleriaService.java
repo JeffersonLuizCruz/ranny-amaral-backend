@@ -182,6 +182,7 @@ public class GaleriaService implements GaleriaConsulta {
 
     @Transactional(readOnly = true)
     public PaginaResponse<GaleriaDtos.GaleriaResponse> listar(String status, String busca,
+                                                               Boolean baixada,
                                                                Integer pagina, Integer tamanho) {
         Specification<Galeria> spec = (root, query, cb) -> cb.conjunction();
         Specification<Galeria> filtroStatus = GaleriaSpecifications.comStatus(GaleriaStatus.de(status));
@@ -191,6 +192,10 @@ public class GaleriaService implements GaleriaConsulta {
         Specification<Galeria> filtroBusca = GaleriaSpecifications.busca(busca);
         if (filtroBusca != null) {
             spec = spec.and(filtroBusca);
+        }
+        Specification<Galeria> filtroZip = GaleriaSpecifications.comZipBaixado(baixada);
+        if (filtroZip != null) {
+            spec = spec.and(filtroZip);
         }
         var pageable = Paginacao.de(pagina, tamanho,
                 Sort.by(Sort.Direction.DESC, "auditoria.atualizadoEm"));
@@ -925,6 +930,7 @@ public class GaleriaService implements GaleriaConsulta {
                     entrada.galeriaId(), link.getId(), entrada.midiaId(),
                     entrada.arquivoId(), entrada.versao(), ip, userAgent));
         }
+        galeria.registrarZipBaixado();
         evento(galeria, EventoGaleriaTipo.DOWNLOAD_REGISTRADO,
                 "%d arquivo(s) baixados em lote (%s)."
                         .formatted(entradas.size(), versao));
@@ -1275,7 +1281,7 @@ public class GaleriaService implements GaleriaConsulta {
         long videosDisponiveis = midiaRepository.countByGaleriaIdAndTipoAndStatus(
                 galeria.getId(), MidiaTipo.VIDEO, MidiaStatus.DISPONIVEL);
         return GaleriaDtos.GaleriaResponse.de(galeria, totalFotos, totalVideos,
-                fotosDisponiveis, videosDisponiveis, null);
+                fotosDisponiveis, videosDisponiveis, null, galeria.getZipBaixadoEm());
     }
 
     private GaleriaDtos.MidiaResponse midiaResponse(MidiaGaleria midia, String galeriaId,
