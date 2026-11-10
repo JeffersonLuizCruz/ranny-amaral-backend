@@ -100,7 +100,6 @@ public class DashboardService {
                 galerias.emSelecao(),
                 galerias.selecaoEnviada(),
                 galerias.emEdicao(),
-                galerias.prontaEntrega(),
                 galerias.extrasPendentes());
 
         return new DashboardDtos.DashboardResponse(
@@ -178,12 +177,6 @@ public class DashboardService {
             pendencias.add(new DashboardDtos.PendenciaResponse(
                     "GALERIA", "Galerias em edição",
                     resumo.galeriasEmEdicao() + " galeria(s) em edição.",
-                    "MEDIA", "/galerias"));
-        }
-        if (resumo.galeriasProntasEntrega() > 0) {
-            pendencias.add(new DashboardDtos.PendenciaResponse(
-                    "GALERIA", "Galerias prontas para entrega",
-                    resumo.galeriasProntasEntrega() + " galeria(s) aguardando publicação.",
                     "MEDIA", "/galerias"));
         }
         if (resumo.galeriasEmSelecao() > 0) {

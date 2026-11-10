@@ -156,18 +156,13 @@ public class Galeria {
         this.auditoria.marcarAtualizacao();
     }
 
-    public void marcarProntaEntrega() {
-        this.status = GaleriaStatus.PRONTA_ENTREGA;
-        this.auditoria.marcarAtualizacao();
-    }
-
     public void publicarEntrega() {
         this.status = GaleriaStatus.ENTREGUE;
         this.auditoria.marcarAtualizacao();
     }
 
     public void revogarEntrega() {
-        this.status = GaleriaStatus.PRONTA_ENTREGA;
+        this.status = GaleriaStatus.EM_EDICAO;
         this.auditoria.marcarAtualizacao();
     }
 

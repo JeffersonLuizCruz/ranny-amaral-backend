@@ -38,7 +38,6 @@ public interface GaleriaConsulta {
             long emSelecao,
             long selecaoEnviada,
             long emEdicao,
-            long prontaEntrega,
             long entregue,
             long extrasPendentes
     ) {

@@ -168,12 +168,6 @@ public class GaleriaController {
         return galeriaService.liberarEdicaoManual(id, request);
     }
 
-    @PostMapping("/{id}/pronta-entrega")
-    @Operation(summary = "Marca a galeria como pronta para entrega")
-    public void marcarProntaEntrega(@PathVariable String id) {
-        galeriaService.marcarProntaEntrega(id);
-    }
-
     @PostMapping("/{id}/entrega/publicar")
     @Operation(summary = "Publica ou renova o link de entrega")
     public GaleriaDtos.LinkResponse publicarEntrega(@PathVariable String id) {

@@ -8,7 +8,6 @@ public enum GaleriaStatus {
     EM_SELECAO,
     SELECAO_ENVIADA,
     EM_EDICAO,
-    PRONTA_ENTREGA,
     ENTREGUE,
     CANCELADA;
 

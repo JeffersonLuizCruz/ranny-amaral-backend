@@ -187,8 +187,6 @@ class GaleriaControllerSpec extends Specification {
 
         mockMvc.perform(post("/api/v1/galerias/${galeria.id}/edicao/iniciar"))
                 .andExpect(status().isOk())
-        mockMvc.perform(post("/api/v1/galerias/${galeria.id}/pronta-entrega"))
-                .andExpect(status().isOk())
         mockMvc.perform(post("/api/v1/galerias/${galeria.id}/entrega/liberar-raw")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(JsonCorpo.json([por: "Teste"])))
@@ -214,6 +212,64 @@ class GaleriaControllerSpec extends Specification {
         selecao.fotosExtras == 0
         entrega.token != null
         download.url.startsWith("http://fake-storage/")
+    }
+
+    def "inicia edicao automaticamente quando a selecao nao tem extras"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Edicao Automatica")
+
+        when:
+        def detalhe = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        detalhe.galeria.status == "em_edicao"
+    }
+
+    def "mantem selecao enviada enquanto os extras estao pendentes"() {
+        given:
+        def preparado = prepararGaleriaComSelecao(
+                "Cliente Extras Pendentes", true, false, true)
+
+        when:
+        def antes = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/extras/isentar"))
+                .andExpect(status().isOk())
+        def depois = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        antes.galeria.status == "selecao_enviada"
+        depois.galeria.status == "em_edicao"
+    }
+
+    def "revoga entrega e volta para em edicao"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Revoga Entrega")
+        enviarVersaoEditada(preparado)
+        def entrega = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        when:
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/revogar"))
+                .andExpect(status().isOk())
+        def detalhe = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        entrega.token != null
+        detalhe.galeria.status == "em_edicao"
     }
 
     def "envia versao editada de foto selecionada e entrega a versao final"() {
@@ -244,8 +300,6 @@ class GaleriaControllerSpec extends Specification {
                 .andReturn())
 
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
-                .andExpect(status().isOk())
-        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
                 .andExpect(status().isOk())
         def entrega = JsonCorpo.mapa(mockMvc.perform(
                 post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
@@ -354,8 +408,6 @@ class GaleriaControllerSpec extends Specification {
         def preparado = prepararGaleriaComSelecao("Cliente Sem Entrega")
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
                 .andExpect(status().isOk())
-        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
-                .andExpect(status().isOk())
 
         when:
         def resultado = mockMvc.perform(
@@ -371,8 +423,6 @@ class GaleriaControllerSpec extends Specification {
         given:
         def preparado = prepararGaleriaComSelecao("Cliente Raw")
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
-                .andExpect(status().isOk())
-        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
                 .andExpect(status().isOk())
 
         when:
@@ -405,8 +455,6 @@ class GaleriaControllerSpec extends Specification {
         def preparado = prepararGaleriaComSelecao("Cliente Raw Bloqueado")
         enviarVersaoEditada(preparado)
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
-                .andExpect(status().isOk())
-        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
                 .andExpect(status().isOk())
         def entrega = JsonCorpo.mapa(mockMvc.perform(
                 post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
@@ -466,8 +514,6 @@ class GaleriaControllerSpec extends Specification {
         enviarVersaoEditada(preparado)
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
                 .andExpect(status().isOk())
-        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
-                .andExpect(status().isOk())
         def entrega = JsonCorpo.mapa(mockMvc.perform(
                 post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
                 .andExpect(status().isOk())
@@ -488,8 +534,6 @@ class GaleriaControllerSpec extends Specification {
         given:
         def preparado = prepararGaleriaComSelecao("Cliente Payload Com Raw")
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
-                .andExpect(status().isOk())
-        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
                 .andExpect(status().isOk())
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/liberar-raw"))
                 .andExpect(status().isOk())
@@ -528,8 +572,6 @@ class GaleriaControllerSpec extends Specification {
         enviarVersaoEditada(preparado)
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
                 .andExpect(status().isOk())
-        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
-                .andExpect(status().isOk())
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
                 .andExpect(status().isOk())
 
@@ -548,8 +590,6 @@ class GaleriaControllerSpec extends Specification {
         def preparado = prepararGaleriaComSelecao("Cliente ZIP Registro")
         enviarVersaoEditada(preparado, Color.MAGENTA)
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
-                .andExpect(status().isOk())
-        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
                 .andExpect(status().isOk())
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/liberar-raw"))
                 .andExpect(status().isOk())
@@ -578,8 +618,6 @@ class GaleriaControllerSpec extends Specification {
         def preparado = prepararGaleriaComSelecao("Cliente Filtro Baixadas")
         enviarVersaoEditada(preparado, Color.BLUE)
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
-                .andExpect(status().isOk())
-        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
                 .andExpect(status().isOk())
         def entrega = JsonCorpo.mapa(mockMvc.perform(
                 post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
@@ -873,8 +911,6 @@ class GaleriaControllerSpec extends Specification {
         enviarVersaoEditada(preparado, Color.PINK)
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
                 .andExpect(status().isOk())
-        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
-                .andExpect(status().isOk())
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/liberar-raw"))
                 .andExpect(status().isOk())
         def entrega = JsonCorpo.mapa(mockMvc.perform(
@@ -910,8 +946,6 @@ class GaleriaControllerSpec extends Specification {
         def preparado = prepararGaleriaComSelecao("Cliente ZIP Bloqueado")
         enviarVersaoEditada(preparado, Color.YELLOW)
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
-                .andExpect(status().isOk())
-        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/pronta-entrega"))
                 .andExpect(status().isOk())
         def entrega = JsonCorpo.mapa(mockMvc.perform(
                 post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))

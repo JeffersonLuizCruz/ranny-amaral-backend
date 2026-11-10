@@ -429,7 +429,6 @@ public class GaleriaService implements GaleriaConsulta {
         Galeria galeria = obter(galeriaId);
         if (galeria.getStatus() == GaleriaStatus.SELECAO_ENVIADA
                 || galeria.getStatus() == GaleriaStatus.EM_EDICAO
-                || galeria.getStatus() == GaleriaStatus.PRONTA_ENTREGA
                 || galeria.getStatus() == GaleriaStatus.ENTREGUE
                 || galeria.getStatus() == GaleriaStatus.CANCELADA) {
             throw new RegraDeNegocioException("SELECAO_NAO_PUBLICAVEL",
@@ -549,6 +548,9 @@ public class GaleriaService implements GaleriaConsulta {
         evento(galeria, EventoGaleriaTipo.SELECAO_ENVIADA,
                 pedido == null ? "Selecao enviada pelo cliente."
                         : "Selecao enviada com %d foto(s) extra(s).".formatted(extras));
+        if (pedido == null) {
+            iniciarEdicaoComEvento(galeria, "Edicao iniciada automaticamente apos a selecao.");
+        }
         return selecaoResponse(selecao);
     }
 
@@ -570,8 +572,8 @@ public class GaleriaService implements GaleriaConsulta {
         }
         pedido.pagar(request.formaPagamento(),
                 request.confirmadoPor() == null ? "Equipe do estudio" : request.confirmadoPor());
-        galeria.iniciarEdicao();
         evento(galeria, EventoGaleriaTipo.EXTRAS_CONFIRMADOS, "Extras confirmados.");
+        iniciarEdicaoComEvento(galeria, "Edicao iniciada apos confirmacao dos extras.");
         return extrasResponse(pedido, true);
     }
 
@@ -582,8 +584,8 @@ public class GaleriaService implements GaleriaConsulta {
                 .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeriaId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Pedido de extras", galeriaId));
         pedido.isentar(por == null ? "Equipe do estudio" : por);
-        galeria.iniciarEdicao();
         evento(galeria, EventoGaleriaTipo.EXTRAS_ISENTOS, "Extras isentos.");
+        iniciarEdicaoComEvento(galeria, "Edicao iniciada apos isencao dos extras.");
         return extrasResponse(pedido, true);
     }
 
@@ -595,9 +597,7 @@ public class GaleriaService implements GaleriaConsulta {
                 .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeriaId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Pedido de extras", galeriaId));
         pedido.liberarManual(request.motivo(), request.por());
-        galeria.iniciarEdicao();
-        evento(galeria, EventoGaleriaTipo.EDICAO_INICIADA,
-                "Edicao liberada manualmente: " + request.motivo());
+        iniciarEdicaoComEvento(galeria, "Edicao liberada manualmente: " + request.motivo());
         return extrasResponse(pedido, true);
     }
 
@@ -690,28 +690,21 @@ public class GaleriaService implements GaleriaConsulta {
             throw new RegraDeNegocioException("EXTRAS_PENDENTES",
                     "Confirme ou isente os extras antes de iniciar a edicao.");
         }
-        galeria.iniciarEdicao();
-        evento(galeria, EventoGaleriaTipo.EDICAO_INICIADA, "Edicao iniciada.");
+        iniciarEdicaoComEvento(galeria, "Edicao iniciada.");
     }
 
-    @Transactional
-    public void marcarProntaEntrega(String galeriaId) {
-        Galeria galeria = obter(galeriaId);
-        if (selecaoRepository.findFirstByGaleriaIdOrderByEnviadaEmDesc(galeriaId).isEmpty()) {
-            throw new RegraDeNegocioException("SEM_SELECAO",
-                    "A galeria ainda nao possui selecao enviada.");
-        }
-        galeria.marcarProntaEntrega();
-        evento(galeria, EventoGaleriaTipo.PRONTA_ENTREGA, "Galeria pronta para entrega.");
+    private void iniciarEdicaoComEvento(Galeria galeria, String detalhe) {
+        galeria.iniciarEdicao();
+        evento(galeria, EventoGaleriaTipo.EDICAO_INICIADA, detalhe);
     }
 
     @Transactional
     public GaleriaDtos.LinkResponse publicarEntrega(String galeriaId) {
         Galeria galeria = obter(galeriaId);
-        if (galeria.getStatus() != GaleriaStatus.PRONTA_ENTREGA
+        if (galeria.getStatus() != GaleriaStatus.EM_EDICAO
                 && galeria.getStatus() != GaleriaStatus.ENTREGUE) {
             throw new RegraDeNegocioException("GALERIA_NAO_PRONTA",
-                    "Marque a galeria como pronta para entrega antes de publicar.");
+                    "A galeria precisa estar em edicao para publicar a entrega.");
         }
         PedidoExtras pedido = extrasRepository
                 .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeriaId).orElse(null);
@@ -870,7 +863,6 @@ public class GaleriaService implements GaleriaConsulta {
     private void validarLiberacaoRaw(Galeria galeria) {
         if (galeria.getStatus() != GaleriaStatus.SELECAO_ENVIADA
                 && galeria.getStatus() != GaleriaStatus.EM_EDICAO
-                && galeria.getStatus() != GaleriaStatus.PRONTA_ENTREGA
                 && galeria.getStatus() != GaleriaStatus.ENTREGUE) {
             throw new RegraDeNegocioException("RAW_INDISPONIVEL",
                     "Libere os originais apos a selecao do cliente.");
@@ -1346,7 +1338,6 @@ public class GaleriaService implements GaleriaConsulta {
         }
         if (galeria.getStatus() != GaleriaStatus.SELECAO_ENVIADA
                 && galeria.getStatus() != GaleriaStatus.EM_EDICAO
-                && galeria.getStatus() != GaleriaStatus.PRONTA_ENTREGA
                 && galeria.getStatus() != GaleriaStatus.ENTREGUE) {
             throw new RegraDeNegocioException("EDICAO_INDISPONIVEL",
                     "Envie versoes editadas apos a selecao do cliente.");
@@ -1450,7 +1441,6 @@ public class GaleriaService implements GaleriaConsulta {
                 galeriaRepository.countByStatus(GaleriaStatus.EM_SELECAO),
                 galeriaRepository.countByStatus(GaleriaStatus.SELECAO_ENVIADA),
                 galeriaRepository.countByStatus(GaleriaStatus.EM_EDICAO),
-                galeriaRepository.countByStatus(GaleriaStatus.PRONTA_ENTREGA),
                 galeriaRepository.countByStatus(GaleriaStatus.ENTREGUE),
                 extrasRepository.countByStatus(PedidoExtrasStatus.PENDENTE));
     }

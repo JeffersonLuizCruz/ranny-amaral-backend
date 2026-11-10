@@ -28,7 +28,6 @@ public final class DashboardDtos {
             long galeriasEmSelecao,
             long galeriasAguardandoEdicao,
             long galeriasEmEdicao,
-            long galeriasProntasEntrega,
             long extrasPendentes
     ) {
     }
