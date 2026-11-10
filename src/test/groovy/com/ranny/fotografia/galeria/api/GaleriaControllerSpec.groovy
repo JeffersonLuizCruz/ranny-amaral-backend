@@ -9,6 +9,7 @@ import com.ranny.fotografia.galeria.model.MidiaTipo
 import com.ranny.fotografia.contrato.repository.EstudioConfigRepository
 import com.ranny.fotografia.galeria.repository.DownloadGaleriaRepository
 import com.ranny.fotografia.galeria.repository.MidiaGaleriaRepository
+import com.ranny.fotografia.pacote.model.FaixaFotoExtra
 import com.ranny.fotografia.pacote.repository.PacoteRepository
 import com.ranny.fotografia.shared.model.FormaPagamentoSaldo
 import com.ranny.fotografia.shared.model.PagamentoEntrada
@@ -27,9 +28,11 @@ import spock.lang.Specification
 import javax.imageio.ImageIO
 import java.awt.Color
 import java.awt.image.BufferedImage
+import java.io.ByteArrayInputStream
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.HexFormat
+import java.util.zip.ZipInputStream
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
@@ -570,6 +573,118 @@ class GaleriaControllerSpec extends Specification {
         downloadRepository.count() == 1
     }
 
+    def "numera fotos em sequencia e nao reutiliza numero apos remocao"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository, "Cliente Numeracao")
+        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), StatusAgendamento.REALIZADO)
+        agendamento.atualizarPagamentoEntrada(
+                new BigDecimal("300.00"), new BigDecimal("30.00"),
+                PagamentoEntrada.confirmada(new BigDecimal("300.00"), new BigDecimal("30.00"),
+                        Instant.now(), "Teste"))
+        agendamento.atualizarPagamentoFinal(
+                PagamentoSaldo.recebido(new BigDecimal("700.00"), FormaPagamentoSaldo.PIX,
+                        Instant.now(), "Teste"))
+        agendamentoRepository.saveAndFlush(agendamento)
+
+        def galeria = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/galerias")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([agendamentoId: agendamento.id])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        enviarFoto(galeria.id, "foto-1.jpg", imagemJpeg(120, 80, Color.BLUE))
+        def segunda = enviarFoto(galeria.id, "foto-2.jpg", imagemJpeg(121, 80, Color.RED))
+        enviarFoto(galeria.id, "foto-3.jpg", imagemJpeg(122, 80, Color.GREEN))
+
+        when:
+        mockMvc.perform(delete("/api/v1/galerias/${galeria.id}/midias/${segunda}"))
+                .andExpect(status().isOk())
+        def quarta = enviarFoto(galeria.id, "foto-4.jpg", imagemJpeg(123, 80, Color.ORANGE))
+        def ativas = midiaRepository.findByGaleriaIdAndStatusNotOrderByOrdemAsc(
+                galeria.id, MidiaStatus.REMOVIDA)
+
+        then:
+        ativas*.ordem == [1, 3, 4]
+        ativas.find { it.id == quarta }.ordem == 4
+    }
+
+    def "prepara e baixa zip das fotos selecionadas para edicao"() {
+        given:
+        def preparado = prepararGaleriaComSelecao(
+                "Cliente Download Selecao", true, false, true)
+
+        when:
+        def preparacao = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/selecao/download"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def zip = mockMvc.perform(get("/api/v1${preparacao.url}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("selecao.zip")))
+                .andReturn()
+
+        then:
+        preparacao.quantidade == 2
+        preparacao.expiraEm != null
+        nomesZip(zip.response.contentAsByteArray) == ["001_foto.jpg", "002_extra.jpg"]
+    }
+
+    def "nao prepara download de selecao reaberta"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Download Reaberto")
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/selecao/reabrir"))
+                .andExpect(status().isOk())
+
+        when:
+        def resultado = mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/selecao/download"))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "SELECAO_NAO_ENVIADA"
+    }
+
+    def "nao baixa zip da selecao com token invalido"() {
+        when:
+        def resultado = mockMvc.perform(
+                get("/api/v1/public/galerias/downloads/token-invalido/selecao.zip"))
+                .andReturn()
+
+        then:
+        resultado.response.status == 404
+    }
+
+    def "cobra extras progressivos e reflete no financeiro"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Faixas Progressivas", true, false, true,
+                [FaixaFotoExtra.de(2, new BigDecimal("30.00"))], 2)
+
+        when:
+        def detalhe = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def financeiro = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/financeiro/mensal").param("mes", preparado.mes))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        detalhe.selecao.fotosExtras == 2
+        detalhe.selecao.valorExtras == 80.0d
+        detalhe.extras.valorUnitario == 50.0d
+        detalhe.extras.valorMedioUnitario == 40.0d
+        detalhe.extras.valorTotal == 80.0d
+        detalhe.extras.detalhamento*.quantidade == [1, 1]
+        detalhe.extras.detalhamento*.valorUnitario == [50.0d, 30.0d]
+        financeiro.totalExtras == 80.0d
+        financeiro.totalExtrasPendentes == 80.0d
+    }
+
     def "publica extras com chave pix e comprovante"() {
         given:
         Cenario.estudioComExtras(estudioRepository)
@@ -642,9 +757,12 @@ class GaleriaControllerSpec extends Specification {
 
     private Map prepararGaleriaComSelecao(String nomeCliente, boolean comExtra = false,
                                           boolean comVideo = false,
-                                          boolean selecionarExtra = false) {
+                                          boolean selecionarExtra = false,
+                                          List<FaixaFotoExtra> faixas = List.of(),
+                                          int quantidadeExtras = 0) {
         def cliente = Cenario.cliente(clienteRepository, nomeCliente)
-        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0)
+        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0,
+                new BigDecimal("50.00"), null, faixas)
         def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
                 Cenario.amanhaAsDez(), StatusAgendamento.REALIZADO)
         agendamento.atualizarPagamentoEntrada(
@@ -663,11 +781,14 @@ class GaleriaControllerSpec extends Specification {
                 .andReturn())
 
         def midiaId = enviarFoto(galeria.id, "foto.jpg", imagemJpeg())
-        String extraMidiaId = null
-        if (comExtra) {
-            extraMidiaId = enviarFoto(galeria.id, "extra.jpg",
-                    imagemJpeg(100, 100, Color.MAGENTA))
+        int totalExtras = quantidadeExtras > 0 ? quantidadeExtras : (comExtra ? 1 : 0)
+        List<String> extrasIds = []
+        for (int i = 0; i < totalExtras; i++) {
+            String nomeExtra = i == 0 ? "extra.jpg" : "extra-${i + 1}.jpg"
+            extrasIds << enviarFoto(galeria.id, nomeExtra,
+                    imagemJpeg(100 + i, 100, new Color(10 + i * 30, 40, 60)))
         }
+        String extraMidiaId = extrasIds.isEmpty() ? null : extrasIds[0]
         String videoId = null
         if (comVideo) {
             videoId = enviarVideo(galeria.id, "video.mp4", "0000ftypisom-video".bytes)
@@ -678,14 +799,15 @@ class GaleriaControllerSpec extends Specification {
                 .andExpect(status().isOk())
                 .andReturn())
         def fotoIds = selecionarExtra && extraMidiaId != null
-                ? [midiaId, extraMidiaId] : [midiaId]
+                ? [midiaId] + extrasIds : [midiaId]
         mockMvc.perform(post("/api/v1/public/galerias/${link.token}/selecao")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(JsonCorpo.json([fotoIds: fotoIds, videoIds: []])))
                 .andExpect(status().isOk())
 
         return [galeriaId: galeria.id, midiaId: midiaId,
-                extraMidiaId: extraMidiaId, videoId: videoId, linkToken: link.token]
+                extraMidiaId: extraMidiaId, videoId: videoId, linkToken: link.token,
+                mes: java.time.YearMonth.from(agendamento.dataHoraInicio).toString()]
     }
 
     def "baixa zip com versoes editadas e originais"() {
@@ -831,5 +953,17 @@ class GaleriaControllerSpec extends Specification {
     private static String sha256(byte[] conteudo) {
         return HexFormat.of().formatHex(
                 MessageDigest.getInstance("SHA-256").digest(conteudo))
+    }
+
+    private static List<String> nomesZip(byte[] conteudo) {
+        def nomes = []
+        new ZipInputStream(new ByteArrayInputStream(conteudo)).withCloseable { zip ->
+            def entrada
+            while ((entrada = zip.nextEntry) != null) {
+                nomes << entrada.name
+                zip.closeEntry()
+            }
+        }
+        return nomes
     }
 }

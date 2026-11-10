@@ -13,6 +13,7 @@ import com.ranny.fotografia.contrato.model.ModeloContrato
 import com.ranny.fotografia.contrato.model.documento.ContratoClausula
 import com.ranny.fotografia.contrato.repository.EstudioConfigRepository
 import com.ranny.fotografia.contrato.repository.ModeloContratoRepository
+import com.ranny.fotografia.pacote.model.FaixaFotoExtra
 import com.ranny.fotografia.pacote.model.Pacote
 import com.ranny.fotografia.pacote.model.PromocaoPacote
 import com.ranny.fotografia.pacote.repository.PacoteRepository
@@ -48,11 +49,12 @@ final class Cenario {
                          int fotos = 20,
                          int videos = 1,
                          BigDecimal fotoExtra = new BigDecimal("50.00"),
-                         PromocaoPacote promocao = null) {
+                         PromocaoPacote promocao = null,
+                         List<FaixaFotoExtra> faixas = List.of()) {
         return repository.save(Pacote.criar(
                 nome, 90, valor, "Pacote de teste", "#7C3AED",
                 ["${fotos} fotos tratadas".toString(), "${videos} vídeos inclusos".toString()],
-                true, fotos, videos, fotoExtra, promocao))
+                true, fotos, videos, fotoExtra, faixas, promocao))
     }
 
     static Agendamento agendamento(AgendamentoRepository repository,
@@ -65,7 +67,7 @@ final class Cenario {
                 : ContatoReserva.de(cliente.nome, cliente.whatsapp)
         CondicoesPacote condicoes = CondicoesPacote.de(
                 pacote.quantidadeFotosInclusas, pacote.quantidadeVideosInclusos,
-                pacote.valorFotoExtra, pacote.valor, null)
+                pacote.valorFotoExtra, pacote.valor, pacote.faixasFotoExtraSnapshot(), null)
         return repository.save(Agendamento.criar(
                 cliente?.id, contato, pacote.id, inicio, inicio.plusMinutes(pacote.duracaoMinutos),
                 "Estúdio Teste", status, null,

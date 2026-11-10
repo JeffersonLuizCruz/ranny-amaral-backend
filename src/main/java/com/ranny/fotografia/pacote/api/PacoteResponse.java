@@ -21,6 +21,7 @@ public record PacoteResponse(
         int quantidadeFotosInclusas,
         int quantidadeVideosInclusos,
         BigDecimal valorFotoExtra,
+        List<FaixaFotoExtraResponse> faixasFotoExtra,
         PromocaoResponse promocao,
         Instant createdAt,
         Instant updatedAt
@@ -39,10 +40,22 @@ public record PacoteResponse(
                 pacote.getQuantidadeFotosInclusas(),
                 pacote.getQuantidadeVideosInclusos(),
                 pacote.getValorFotoExtra(),
+                pacote.getFaixasFotoExtra().stream()
+                        .map(FaixaFotoExtraResponse::de)
+                        .toList(),
                 PromocaoResponse.de(pacote.getPromocao()),
                 pacote.getAuditoria().getCriadoEm(),
                 pacote.getAuditoria().getAtualizadoEm()
         );
+    }
+
+    public record FaixaFotoExtraResponse(int quantidadeMinima, BigDecimal valorUnitario) {
+
+        static FaixaFotoExtraResponse de(com.ranny.fotografia.pacote.model.FaixaFotoExtra faixa) {
+            return new FaixaFotoExtraResponse(
+                    faixa.getQuantidadeMinima(),
+                    faixa.getValorUnitario());
+        }
     }
 
     public record PromocaoResponse(

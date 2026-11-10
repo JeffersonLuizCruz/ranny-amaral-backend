@@ -8,10 +8,12 @@ import com.ranny.fotografia.galeria.model.MidiaGaleria;
 import com.ranny.fotografia.galeria.model.PedidoExtras;
 import com.ranny.fotografia.galeria.model.SelecaoGaleria;
 import com.ranny.fotografia.shared.model.FormaPagamentoSaldo;
+import com.ranny.fotografia.shared.financeiro.FaixaAplicada;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -32,6 +34,7 @@ public final class GaleriaDtos {
             int fotosInclusas,
             int videosInclusos,
             BigDecimal valorFotoExtra,
+            List<FaixaFotoExtraResponse> faixasFotoExtra,
             long totalFotos,
             long totalVideos,
             long fotosDisponiveis,
@@ -56,6 +59,9 @@ public final class GaleriaDtos {
                     galeria.getFotosInclusas(),
                     galeria.getVideosInclusos(),
                     galeria.getValorFotoExtra(),
+                    galeria.getFaixasFotoExtra().stream()
+                            .map(FaixaFotoExtraResponse::de)
+                            .toList(),
                     totalFotos,
                     totalVideos,
                     fotosDisponiveis,
@@ -66,6 +72,16 @@ public final class GaleriaDtos {
                     capaUrl,
                     galeria.getAuditoria().getCriadoEm(),
                     galeria.getAuditoria().getAtualizadoEm());
+        }
+    }
+
+    public record FaixaFotoExtraResponse(int quantidadeMinima, BigDecimal valorUnitario) {
+
+        static FaixaFotoExtraResponse de(
+                com.ranny.fotografia.shared.model.FaixaFotoExtraSnapshot faixa) {
+            return new FaixaFotoExtraResponse(
+                    faixa.quantidadeMinima(),
+                    faixa.valorUnitario());
         }
     }
 
@@ -167,7 +183,9 @@ public final class GaleriaDtos {
             String id,
             int quantidadeFotos,
             BigDecimal valorUnitario,
+            BigDecimal valorMedioUnitario,
             BigDecimal valorTotal,
+            List<FaixaAplicadaResponse> detalhamento,
             String status,
             String formaPagamento,
             Instant confirmadoEm,
@@ -184,11 +202,20 @@ public final class GaleriaDtos {
         public static PedidoExtrasResponse de(PedidoExtras pedido, String chavePix,
                                               String instrucoesPagamento,
                                               String comprovanteUrl) {
+            BigDecimal valorMedio = pedido.getQuantidadeFotos() > 0
+                    ? pedido.getValorTotal().divide(
+                            BigDecimal.valueOf(pedido.getQuantidadeFotos()),
+                            2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
             return new PedidoExtrasResponse(
                     pedido.getId(),
                     pedido.getQuantidadeFotos(),
                     pedido.getValorUnitario(),
+                    valorMedio,
                     pedido.getValorTotal(),
+                    pedido.getDetalhamento().stream()
+                            .map(FaixaAplicadaResponse::de)
+                            .toList(),
                     pedido.getStatus().name().toLowerCase(Locale.ROOT),
                     pedido.getFormaPagamento() == null ? null
                             : pedido.getFormaPagamento().name().toLowerCase(Locale.ROOT),
@@ -202,6 +229,19 @@ public final class GaleriaDtos {
                     pedido.getComprovanteNome(),
                     pedido.getComprovanteEnviadoEm(),
                     comprovanteUrl);
+        }
+    }
+
+    public record FaixaAplicadaResponse(
+            int quantidade,
+            BigDecimal valorUnitario,
+            BigDecimal subtotal
+    ) {
+        static FaixaAplicadaResponse de(FaixaAplicada faixa) {
+            return new FaixaAplicadaResponse(
+                    faixa.quantidade(),
+                    faixa.valorUnitario(),
+                    faixa.subtotal());
         }
     }
 
@@ -324,6 +364,10 @@ public final class GaleriaDtos {
     }
 
     public record DownloadResponse(String url, Instant expiraEm, String nomeArquivo) {
+    }
+
+    /** URL temporaria do ZIP interno com as fotos selecionadas para edicao. */
+    public record DownloadSelecaoResponse(String url, Instant expiraEm, int quantidade) {
     }
 
     /** Validacao do ZIP antes de iniciar o streaming; evita baixar JSON de erro. */

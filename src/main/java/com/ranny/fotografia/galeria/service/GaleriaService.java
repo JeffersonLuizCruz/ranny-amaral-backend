@@ -25,6 +25,8 @@ import com.ranny.fotografia.galeria.model.PedidoExtras;
 import com.ranny.fotografia.galeria.model.PedidoExtrasStatus;
 import com.ranny.fotografia.galeria.model.SelecaoGaleria;
 import com.ranny.fotografia.galeria.model.SelecaoItem;
+import com.ranny.fotografia.galeria.model.SelecaoStatus;
+import com.ranny.fotografia.galeria.model.TokenDownloadSelecao;
 import com.ranny.fotografia.galeria.repository.DownloadGaleriaRepository;
 import com.ranny.fotografia.galeria.repository.EventoGaleriaRepository;
 import com.ranny.fotografia.galeria.repository.GaleriaRepository;
@@ -35,12 +37,16 @@ import com.ranny.fotografia.galeria.repository.MidiaGaleriaRepository;
 import com.ranny.fotografia.galeria.repository.PedidoExtrasRepository;
 import com.ranny.fotografia.galeria.repository.SelecaoGaleriaRepository;
 import com.ranny.fotografia.galeria.repository.SelecaoItemRepository;
+import com.ranny.fotografia.galeria.repository.TokenDownloadSelecaoRepository;
 import com.ranny.fotografia.shared.api.PaginaResponse;
 import com.ranny.fotografia.shared.api.Paginacao;
 import com.ranny.fotografia.shared.exception.RecursoExpiradoException;
 import com.ranny.fotografia.shared.model.FormaPagamentoSaldo;
 import com.ranny.fotografia.shared.exception.RecursoNaoEncontradoException;
 import com.ranny.fotografia.shared.exception.RegraDeNegocioException;
+import com.ranny.fotografia.shared.financeiro.CalculadoraExtras;
+import com.ranny.fotografia.shared.financeiro.ResultadoExtras;
+import com.ranny.fotografia.shared.model.FaixaFotoExtraSnapshot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -55,10 +61,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -84,6 +92,7 @@ public class GaleriaService implements GaleriaConsulta {
     private static final String ESTUDIO_PADRAO = "estudio";
     private static final int DIAS_SELECAO = 30;
     private static final int DIAS_ENTREGA = 90;
+    private static final Duration VALIDADE_DOWNLOAD_SELECAO = Duration.ofMinutes(10);
     private static final long ZIP_MAX_BYTES = 2L * 1024 * 1024 * 1024;
 
     private final GaleriaRepository galeriaRepository;
@@ -95,6 +104,7 @@ public class GaleriaService implements GaleriaConsulta {
     private final PedidoExtrasRepository extrasRepository;
     private final DownloadGaleriaRepository downloadRepository;
     private final EventoGaleriaRepository eventoRepository;
+    private final TokenDownloadSelecaoRepository tokenDownloadRepository;
     private final AgendamentoConsulta agendamentoConsulta;
     private final ClienteConsulta clienteConsulta;
     private final EstudioConsulta estudioConsulta;
@@ -112,6 +122,7 @@ public class GaleriaService implements GaleriaConsulta {
                           PedidoExtrasRepository extrasRepository,
                           DownloadGaleriaRepository downloadRepository,
                           EventoGaleriaRepository eventoRepository,
+                          TokenDownloadSelecaoRepository tokenDownloadRepository,
                           AgendamentoConsulta agendamentoConsulta,
                           ClienteConsulta clienteConsulta,
                           EstudioConsulta estudioConsulta,
@@ -129,6 +140,7 @@ public class GaleriaService implements GaleriaConsulta {
         this.extrasRepository = extrasRepository;
         this.downloadRepository = downloadRepository;
         this.eventoRepository = eventoRepository;
+        this.tokenDownloadRepository = tokenDownloadRepository;
         this.agendamentoConsulta = agendamentoConsulta;
         this.clienteConsulta = clienteConsulta;
         this.estudioConsulta = estudioConsulta;
@@ -151,6 +163,8 @@ public class GaleriaService implements GaleriaConsulta {
                     int fotos = condicoes == null ? 0 : condicoes.quantidadeFotosInclusas();
                     int videos = condicoes == null ? 0 : condicoes.quantidadeVideosInclusos();
                     BigDecimal valorExtra = condicoes == null ? BigDecimal.ZERO : condicoes.valorFotoExtra();
+                    List<FaixaFotoExtraSnapshot> faixasExtras =
+                            condicoes == null ? List.of() : condicoes.faixasFotoExtra();
                     String clienteNome = clienteConsulta.buscar(agendamento.clienteId())
                             .map(cliente -> cliente.nome())
                             .orElseGet(() -> agendamento.contato() == null
@@ -158,7 +172,8 @@ public class GaleriaService implements GaleriaConsulta {
 
                     Galeria galeria = Galeria.criar(
                             ESTUDIO_PADRAO, agendamento.id(), agendamento.contratoId(),
-                            agendamento.clienteId(), clienteNome, fotos, videos, valorExtra);
+                            agendamento.clienteId(), clienteNome, fotos, videos, valorExtra,
+                            faixasExtras);
                     galeriaRepository.save(galeria);
                     evento(galeria, EventoGaleriaTipo.CRIADA, "Galeria criada para o ensaio.");
                     return response(galeria);
@@ -263,11 +278,14 @@ public class GaleriaService implements GaleriaConsulta {
         ArquivoUpload.ArquivoResumo arquivo = arquivoUpload.concluir(
                 arquivoId, finalidade, galeriaId, partes);
 
-        long existentes = midiaRepository.countByGaleriaIdAndTipoAndStatusNot(
-                galeriaId, tipo, MidiaStatus.REMOVIDA);
+        // O lock na galeria serializa conclusoes concorrentes e evita que duas
+        // midias recebam o mesmo numero; removidas continuam reservando o seu.
+        galeriaRepository.findByIdComLock(galeriaId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Galeria", galeriaId));
+        int proximaOrdem = midiaRepository.maiorOrdem(galeriaId, tipo) + 1;
         MidiaGaleria midia = MidiaGaleria.criar(
                 galeriaId, tipo, arquivo.id(), arquivo.nomeOriginal(), arquivo.mimeType(),
-                arquivo.tamanhoBytes(), (int) existentes + 1);
+                arquivo.tamanhoBytes(), proximaOrdem);
         midiaRepository.save(midia);
         evento(galeria, EventoGaleriaTipo.MIDIA_ENVIADA, arquivo.nomeOriginal() + " enviada.");
 
@@ -500,7 +518,9 @@ public class GaleriaService implements GaleriaConsulta {
         }
 
         int extras = Math.max(0, fotos.size() - galeria.getFotosInclusas());
-        BigDecimal valorExtras = galeria.getValorFotoExtra().multiply(BigDecimal.valueOf(extras));
+        ResultadoExtras resultadoExtras = CalculadoraExtras.calcular(
+                galeria.getValorFotoExtra(), galeria.getFaixasFotoExtra(), extras);
+        BigDecimal valorExtras = resultadoExtras.valorTotal();
         String protocolo = "SEL-%d-%04d".formatted(LocalDate.now().getYear(),
                 selecaoRepository.count() + 1);
         SelecaoGaleria selecao = selecaoRepository.save(SelecaoGaleria.criar(
@@ -517,7 +537,7 @@ public class GaleriaService implements GaleriaConsulta {
                     estudioConsulta.dadosPagamentoExtras();
             pedido = extrasRepository.save(PedidoExtras.criar(
                     galeria.getId(), selecao.getId(), extras,
-                    galeria.getValorFotoExtra(), valorExtras,
+                    galeria.getValorFotoExtra(), valorExtras, resultadoExtras.detalhamento(),
                     pagamentoExtras.chavePix(), pagamentoExtras.instrucoesPagamento()));
         }
         galeria.registrarSelecao(selecao.getId(), pedido == null ? null : pedido.getId());
@@ -909,6 +929,143 @@ public class GaleriaService implements GaleriaConsulta {
                 "%d arquivo(s) baixados em lote (%s)."
                         .formatted(entradas.size(), versao));
         return entradas.size();
+    }
+
+    /**
+     * Prepara o download interno das fotos selecionadas para edicao.
+     *
+     * <p>A URL devolvida e relativa a base da API e usa um token de capability
+     * de curta duracao, pois o navegador nao envia o header Authorization em
+     * uma navegacao direta de download.
+     */
+    @Transactional
+    public GaleriaDtos.DownloadSelecaoResponse prepararDownloadSelecao(String galeriaId) {
+        ContextoDownloadSelecao contexto = contextoDownloadSelecaoDaGaleria(galeriaId);
+        validarTamanhoZipSelecao(contexto);
+
+        tokenDownloadRepository.deleteByExpiraEmBefore(Instant.now());
+        TokenDownloadSelecao token = tokenDownloadRepository.save(
+                TokenDownloadSelecao.criar(galeriaId, contexto.selecao().getId(),
+                        VALIDADE_DOWNLOAD_SELECAO));
+        return new GaleriaDtos.DownloadSelecaoResponse(
+                "/public/galerias/downloads/%s/selecao.zip".formatted(token.getToken()),
+                token.getExpiraEm(),
+                contexto.fotos().size());
+    }
+
+    /**
+     * Valida o token e registra o evento antes do streaming.
+     *
+     * <p>O registro antecipado mantem o historico mesmo se o cliente fechar a
+     * conexao no meio do ZIP, seguindo o mesmo criterio do ZIP de entrega.
+     */
+    @Transactional
+    public int registrarDownloadSelecao(String token) {
+        ContextoDownloadSelecao contexto = contextoDownloadSelecaoDoToken(token);
+        validarTamanhoZipSelecao(contexto);
+        evento(contexto.galeria(), EventoGaleriaTipo.DOWNLOAD_REGISTRADO,
+                "%d foto(s) selecionada(s) baixadas para edicao (protocolo %s)."
+                        .formatted(contexto.fotos().size(),
+                                contexto.selecao().getProtocolo()));
+        return contexto.fotos().size();
+    }
+
+    /** Escreve o ZIP das fotos selecionadas direto na resposta, sem buffer total. */
+    @Transactional(readOnly = true)
+    public void escreverZipSelecao(String token, OutputStream saida) throws IOException {
+        ContextoDownloadSelecao contexto = contextoDownloadSelecaoDoToken(token);
+        validarTamanhoZipSelecao(contexto);
+
+        Set<String> nomes = new HashSet<>();
+        try (ZipOutputStream zip = new ZipOutputStream(saida)) {
+            for (MidiaGaleria foto : contexto.fotos()) {
+                String nome = "%03d_%s".formatted(foto.getOrdem(), foto.getNomeOriginal());
+                zip.putNextEntry(new ZipEntry(nomeUnico(nome, nomes)));
+                try (InputStream conteudo = arquivoUpload.abrirStream(
+                        foto.getArquivoOriginalId(), ArquivoFinalidade.FOTO_ORIGINAL,
+                        contexto.galeria().getId())) {
+                    conteudo.transferTo(zip);
+                }
+                zip.closeEntry();
+            }
+            zip.finish();
+        }
+    }
+
+    private ContextoDownloadSelecao contextoDownloadSelecaoDaGaleria(String galeriaId) {
+        Galeria galeria = obter(galeriaId);
+        SelecaoGaleria selecao = selecaoRepository
+                .findFirstByGaleriaIdOrderByEnviadaEmDesc(galeriaId)
+                .orElseThrow(() -> new RegraDeNegocioException("SEM_SELECAO",
+                        "A galeria ainda nao possui selecao enviada."));
+        if (selecao.getStatus() != SelecaoStatus.ENVIADA) {
+            throw new RegraDeNegocioException("SELECAO_NAO_ENVIADA",
+                    "A selecao precisa estar enviada para baixar as fotos.");
+        }
+        List<MidiaGaleria> fotos = fotosDaSelecao(galeria, selecao);
+        if (fotos.isEmpty()) {
+            throw new RegraDeNegocioException("SELECAO_SEM_FOTOS",
+                    "A selecao nao possui fotos disponiveis para download.");
+        }
+        return new ContextoDownloadSelecao(galeria, selecao, fotos);
+    }
+
+    private ContextoDownloadSelecao contextoDownloadSelecaoDoToken(String token) {
+        TokenDownloadSelecao download = tokenDownloadRepository.findByToken(token)
+                .orElseThrow(() -> new RecursoNaoEncontradoException(
+                        "Token de download da selecao invalido ou inexistente."));
+        if (!download.estaValido()) {
+            throw new RecursoExpiradoException("TOKEN_DOWNLOAD_EXPIRADO",
+                    "Este link de download expirou. Solicite um novo na galeria.");
+        }
+        Galeria galeria = obter(download.getGaleriaId());
+        SelecaoGaleria selecao = selecaoRepository.findById(download.getSelecaoId())
+                .orElseThrow(() -> new RecursoNaoEncontradoException(
+                        "Selecao", download.getSelecaoId()));
+        List<MidiaGaleria> fotos = fotosDaSelecao(galeria, selecao);
+        if (fotos.isEmpty()) {
+            throw new RegraDeNegocioException("SELECAO_SEM_FOTOS",
+                    "A selecao nao possui fotos disponiveis para download.");
+        }
+        return new ContextoDownloadSelecao(galeria, selecao, fotos);
+    }
+
+    private List<MidiaGaleria> fotosDaSelecao(Galeria galeria, SelecaoGaleria selecao) {
+        List<String> ids = selecaoItemRepository.findBySelecaoId(selecao.getId()).stream()
+                .filter(item -> MidiaTipo.FOTO.name().equals(item.getTipo()))
+                .map(SelecaoItem::getMidiaId)
+                .toList();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        List<MidiaGaleria> fotos = midiaRepository.findByGaleriaIdAndIdIn(galeria.getId(), ids);
+        // Nunca omitir silenciosamente uma foto escolhida pelo cliente: se ela
+        // foi removida ou falhou, o staff precisa saber antes de editar.
+        if (fotos.size() != ids.size() || fotos.stream().anyMatch(foto -> !foto.estaDisponivel())) {
+            throw new RegraDeNegocioException("SELECAO_FOTO_INDISPONIVEL",
+                    "Uma ou mais fotos selecionadas nao estao disponiveis para download.");
+        }
+        return fotos.stream()
+                .sorted(Comparator.comparingInt(MidiaGaleria::getOrdem))
+                .toList();
+    }
+
+    private void validarTamanhoZipSelecao(ContextoDownloadSelecao contexto) {
+        long totalBytes = 0;
+        for (MidiaGaleria foto : contexto.fotos()) {
+            totalBytes += arquivoUpload.buscar(foto.getArquivoOriginalId(),
+                            ArquivoFinalidade.FOTO_ORIGINAL, contexto.galeria().getId())
+                    .map(ArquivoUpload.ArquivoResumo::tamanhoBytes)
+                    .orElse(0L);
+            if (totalBytes > ZIP_MAX_BYTES) {
+                throw new RegraDeNegocioException("ZIP_MUITO_GRANDE",
+                        "A selecao excede o limite de 2 GB para download em lote.");
+            }
+        }
+    }
+
+    private record ContextoDownloadSelecao(Galeria galeria, SelecaoGaleria selecao,
+                                           List<MidiaGaleria> fotos) {
     }
 
     /**

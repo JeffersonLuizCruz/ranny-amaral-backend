@@ -103,6 +103,18 @@ public class GaleriaPublicaController {
         galeriaService.escreverZip(token, versao, response.getOutputStream());
     }
 
+    @GetMapping("/downloads/{token}/selecao.zip")
+    @Operation(summary = "Baixa o ZIP interno das fotos selecionadas para edicao")
+    public void baixarZipSelecao(
+            @PathVariable String token,
+            HttpServletResponse response) throws IOException {
+        galeriaService.registrarDownloadSelecao(token);
+        response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"selecao.zip\"");
+        galeriaService.escreverZipSelecao(token, response.getOutputStream());
+    }
+
     private static String ip(HttpServletRequest request) {
         String encaminhado = request.getHeader("X-Forwarded-For");
         if (encaminhado != null && !encaminhado.isBlank()) {

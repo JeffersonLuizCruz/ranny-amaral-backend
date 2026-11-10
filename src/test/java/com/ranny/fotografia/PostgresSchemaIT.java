@@ -33,10 +33,11 @@ class PostgresSchemaIT {
                     'estudio', 'arquivos', 'galerias', 'midias_galeria',
                     'midia_derivados', 'links_galeria', 'selecoes_galeria',
                     'selecao_itens', 'pedidos_extras', 'downloads_galeria',
-                    'eventos_galeria', 'event_publication', 'event_publication_archive'
+                    'eventos_galeria', 'event_publication', 'event_publication_archive',
+                    'pacote_faixas_foto_extra'
                   )
                 """, Integer.class);
-        assertThat(tabelas).isEqualTo(20);
+        assertThat(tabelas).isEqualTo(21);
 
         Integer migracoes = jdbcTemplate.queryForObject(
                 "select count(*) from flyway_schema_history where success = true",
@@ -51,6 +52,20 @@ class PostgresSchemaIT {
                 where table_schema = 'public'
                   and table_name = 'contratos'
                   and column_name in ('cliente_nome', 'pacote_nome', 'entrada_arquivo_id')
+                """, Integer.class);
+        assertThat(colunas).isEqualTo(3);
+    }
+
+    @Test
+    void aplicaFaixasProgressivasDeFotoExtra() {
+        Integer colunas = jdbcTemplate.queryForObject("""
+                select count(*) from information_schema.columns
+                where table_schema = 'public'
+                  and (
+                    (table_name = 'agendamentos' and column_name = 'cond_faixas_foto_extra')
+                    or (table_name = 'galerias' and column_name = 'faixas_foto_extra')
+                    or (table_name = 'pedidos_extras' and column_name = 'detalhamento_extras')
+                  )
                 """, Integer.class);
         assertThat(colunas).isEqualTo(3);
     }

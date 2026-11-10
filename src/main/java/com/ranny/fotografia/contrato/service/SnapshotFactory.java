@@ -10,6 +10,7 @@ import com.ranny.fotografia.pacote.PacoteConsulta;
 import com.ranny.fotografia.pacote.PacoteResumo;
 import com.ranny.fotografia.shared.exception.RegraDeNegocioException;
 import com.ranny.fotografia.shared.exception.RecursoNaoEncontradoException;
+import com.ranny.fotografia.shared.model.FaixaFotoExtraSnapshot;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -108,6 +109,7 @@ public class SnapshotFactory {
         int fotos = pacote.quantidadeFotosInclusas();
         int videos = pacote.quantidadeVideosInclusos();
         var valorFotoExtra = pacote.valorFotoExtra();
+        List<FaixaFotoExtraSnapshot> faixasFotoExtra = pacote.faixasFotoExtra();
         ContratoSnapshot.PromocaoSnapshot promocao = pacote.promocaoAplicada(agora)
                 .map(p -> new ContratoSnapshot.PromocaoSnapshot(p.valorPromocional(), p.rotulo()))
                 .orElse(null);
@@ -116,6 +118,7 @@ public class SnapshotFactory {
             fotos = agendamento.condicoes().quantidadeFotosInclusas();
             videos = agendamento.condicoes().quantidadeVideosInclusos();
             valorFotoExtra = agendamento.condicoes().valorFotoExtra();
+            faixasFotoExtra = agendamento.condicoes().faixasFotoExtra();
             promocao = agendamento.condicoes().promocaoValor() == null ? null
                     : new ContratoSnapshot.PromocaoSnapshot(
                             agendamento.condicoes().promocaoValor(),
@@ -134,6 +137,7 @@ public class SnapshotFactory {
                 fotos,
                 videos,
                 valorFotoExtra,
+                faixasFotoExtra,
                 promocao,
                 valorEfetivo);
     }

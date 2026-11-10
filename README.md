@@ -112,8 +112,12 @@ com.ranny.fotografia
 - `src/main/resources/db/migration/V6__liberacao_raw.sql` adiciona a liberação auditada de RAW na galeria e a versão baixada no histórico.
 - `src/main/resources/db/migration/V7__auth.sql` cria `usuarios`, `refresh_tokens` e `auth_eventos`.
 - `src/main/resources/db/migration/V8__invariantes_pagamento.sql` garante que `saldo_status = 'CONFIRMADO'` só exista quando `saldo_valor >= saldo_restante` em contratos e agendamentos.
+- `src/main/resources/db/migration/V9__extras_pix_comprovante.sql` adiciona a chave Pix e o comprovante do pedido de extras.
+- `src/main/resources/db/migration/V10__numeracao_midias.sql` renumera as mídias existentes e cria a constraint única de `(galeria_id, tipo, ordem)`.
+- `src/main/resources/db/migration/V11__download_selecao_staff.sql` cria os tokens de curta duração para o staff baixar as fotos selecionadas.
+- `src/main/resources/db/migration/V12__faixas_foto_extra.sql` adiciona as faixas progressivas de preço da foto extra no catálogo e os snapshots JSON em agendamentos, galerias e pedidos de extras.
 - O Flyway é a fonte de verdade do schema; o Hibernate apenas valida (`ddl-auto=validate`).
-- **Nunca edite uma migração já aplicada.** Mudanças entram em `V8__...`, `V9__...`, etc.
+- **Nunca edite uma migração já aplicada.** Mudanças entram em `V13__...`, `V14__...`, etc.
 - `spring.flyway.baseline-on-migrate=true` protege bancos não vazios sem histórico; em banco novo, a V1 é aplicada normalmente.
 - O evento de contrato é compacto (chaves JSON curtas) para caber no `serialized_event varchar(255)`; `EventSerializationSpec` garante o limite.
 
@@ -227,10 +231,17 @@ bucket. O download do staff agora é protegido pelo JWT.
 - Upload direto ao Garage/S3 com progresso e deduplicação (retomada após reload ainda pendente — DT-006).
 - Fotos geram derivados `thumb-400` e `web-1600` via processamento de imagem.
 - Vídeos são armazenados e entregues como original nesta fase.
+- Cada foto e vídeo recebe um **número estável** (`ordem`) por tipo dentro da galeria. O grid público e o
+  detalhe do staff exibem o mesmo número, da esquerda para a direita; remoções não reutilizam números e
+  podem deixar lacunas.
 - Seleção pública por token de 30 dias; entrega por token de 90 dias.
 - O payload público só expõe a URL do original quando o RAW foi liberado; downloads individuais e ZIP
   passam pelo endpoint que valida o gate e registra o evento.
 - `GET /api/v1/public/galerias/{token}/download-zip/validar` valida o lote antes do streaming.
+- O staff baixa as fotos selecionadas para edição por
+  `POST /api/v1/galerias/{id}/selecao/download`, que devolve uma URL temporária (10 min) para
+  `GET /api/v1/public/galerias/downloads/{token}/selecao.zip`. O ZIP usa os originais, nomeia cada
+  arquivo com o número da foto (`001_nome.jpg`) e registra o evento no histórico.
 - Extras usam uma **chave Pix própria do estúdio**, separada da chave do ensaio, e o pedido guarda um
   snapshot dessa chave. O cliente envia o comprovante Pix pelo link de seleção; o staff confirma o
   recebimento antes de iniciar a edição.
@@ -266,9 +277,9 @@ bucket. O download do staff agora é protegido pelo JWT.
 | Pagamentos do contrato | `POST /{id}/pagamento/confirmar`, `POST /{id}/pagamento/rejeitar`, `POST /{id}/pagamento/isentar`, `PUT /{id}/pagamento-final`, `POST /{id}/pagamento-final/isentar`, `POST /{id}/pagamento-final/reabrir` |
 | Upload de comprovante | `POST /api/v1/public/contratos/{token}/comprovante/upload`, `POST .../upload/{arquivoId}/complete`, `POST .../upload/{arquivoId}/abort`, `GET .../upload/{arquivoId}/status` |
 | Galerias | `GET/POST /api/v1/galerias`, `GET /{id}`, `GET /{id}/midias`, `POST /{id}/midias/upload`, `POST .../complete`, `DELETE /{id}/midias/{midiaId}` |
-| Seleção e extras | `POST /{id}/selecao/publicar`, `POST /{id}/selecao/reabrir`, `POST /{id}/extras/confirmar`, `POST /{id}/extras/isentar`, `POST /{id}/edicao/iniciar`, `POST /{id}/edicao/liberar` |
+| Seleção e extras | `POST /{id}/selecao/publicar`, `POST /{id}/selecao/reabrir`, `POST /{id}/selecao/download`, `POST /{id}/extras/confirmar`, `POST /{id}/extras/isentar`, `POST /{id}/edicao/iniciar`, `POST /{id}/edicao/liberar` |
 | Entrega | `POST /{id}/pronta-entrega`, `POST /{id}/entrega/publicar`, `POST /{id}/entrega/revogar` |
-| Galeria pública | `GET /api/v1/public/galerias/{token}`, `POST .../selecao`, `POST .../download` |
+| Galeria pública | `GET /api/v1/public/galerias/{token}`, `POST .../selecao`, `POST .../download`, `GET /api/v1/public/galerias/downloads/{token}/selecao.zip` |
 | Financeiro | `GET /api/v1/financeiro/mensal?mes=YYYY-MM` |
 | Modelos e estúdio | `/api/v1/modelos-contrato`, `/api/v1/estudio` |
 | Aceite público | `GET/POST /api/v1/public/contratos/{token}`, `POST .../visualizar`, `POST .../aceite`, `POST .../comprovante` |

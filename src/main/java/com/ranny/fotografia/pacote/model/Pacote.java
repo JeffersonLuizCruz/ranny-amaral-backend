@@ -1,6 +1,7 @@
 package com.ranny.fotografia.pacote.model;
 
 import com.ranny.fotografia.shared.model.Auditoria;
+import com.ranny.fotografia.shared.model.FaixaFotoExtraSnapshot;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -9,6 +10,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
@@ -80,6 +82,16 @@ public class Pacote {
     @Column(name = "valor_foto_extra", nullable = false, precision = 10, scale = 2)
     private BigDecimal valorFotoExtra;
 
+    /**
+     * Faixas progressivas da foto extra, opcionais. A primeira faixa comeca
+     * sempre depois do preco base ({@link #valorFotoExtra}).
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "pacote_faixas_foto_extra",
+            joinColumns = @JoinColumn(name = "pacote_id"))
+    @OrderBy("quantidadeMinima ASC")
+    private List<FaixaFotoExtra> faixasFotoExtra = new ArrayList<>();
+
     @Embedded
     private PromocaoPacote promocao;
 
@@ -90,11 +102,22 @@ public class Pacote {
                                String corHex, List<String> itensInclusos, boolean ativo,
                                int quantidadeFotosInclusas, int quantidadeVideosInclusos,
                                BigDecimal valorFotoExtra, PromocaoPacote promocao) {
+        return criar(nome, duracaoMinutos, valor, descricao, corHex, itensInclusos, ativo,
+                quantidadeFotosInclusas, quantidadeVideosInclusos, valorFotoExtra,
+                List.of(), promocao);
+    }
+
+    public static Pacote criar(String nome, int duracaoMinutos, BigDecimal valor, String descricao,
+                               String corHex, List<String> itensInclusos, boolean ativo,
+                               int quantidadeFotosInclusas, int quantidadeVideosInclusos,
+                               BigDecimal valorFotoExtra, List<FaixaFotoExtra> faixasFotoExtra,
+                               PromocaoPacote promocao) {
         Pacote pacote = new Pacote();
         pacote.id = UUID.randomUUID().toString();
         pacote.auditoria = Auditoria.iniciar();
         pacote.aplicar(nome, duracaoMinutos, valor, descricao, corHex, itensInclusos, ativo,
-                quantidadeFotosInclusas, quantidadeVideosInclusos, valorFotoExtra, promocao);
+                quantidadeFotosInclusas, quantidadeVideosInclusos, valorFotoExtra,
+                faixasFotoExtra, promocao);
         return pacote;
     }
 
@@ -104,11 +127,23 @@ public class Pacote {
                                    boolean ativo, int quantidadeFotosInclusas,
                                    int quantidadeVideosInclusos, BigDecimal valorFotoExtra,
                                    PromocaoPacote promocao) {
+        return restaurar(id, nome, duracaoMinutos, valor, descricao, corHex, itensInclusos,
+                ativo, quantidadeFotosInclusas, quantidadeVideosInclusos, valorFotoExtra,
+                List.of(), promocao);
+    }
+
+    /** Usado pelo seed de desenvolvimento para preservar IDs de demonstracao. */
+    public static Pacote restaurar(String id, String nome, int duracaoMinutos, BigDecimal valor,
+                                   String descricao, String corHex, List<String> itensInclusos,
+                                   boolean ativo, int quantidadeFotosInclusas,
+                                   int quantidadeVideosInclusos, BigDecimal valorFotoExtra,
+                                   List<FaixaFotoExtra> faixasFotoExtra, PromocaoPacote promocao) {
         Pacote pacote = new Pacote();
         pacote.id = id;
         pacote.auditoria = Auditoria.iniciar();
         pacote.aplicar(nome, duracaoMinutos, valor, descricao, corHex, itensInclusos, ativo,
-                quantidadeFotosInclusas, quantidadeVideosInclusos, valorFotoExtra, promocao);
+                quantidadeFotosInclusas, quantidadeVideosInclusos, valorFotoExtra,
+                faixasFotoExtra, promocao);
         return pacote;
     }
 
@@ -116,8 +151,19 @@ public class Pacote {
                           String corHex, List<String> itensInclusos, boolean ativo,
                           int quantidadeFotosInclusas, int quantidadeVideosInclusos,
                           BigDecimal valorFotoExtra, PromocaoPacote promocao) {
+        atualizar(nome, duracaoMinutos, valor, descricao, corHex, itensInclusos, ativo,
+                quantidadeFotosInclusas, quantidadeVideosInclusos, valorFotoExtra,
+                List.of(), promocao);
+    }
+
+    public void atualizar(String nome, int duracaoMinutos, BigDecimal valor, String descricao,
+                          String corHex, List<String> itensInclusos, boolean ativo,
+                          int quantidadeFotosInclusas, int quantidadeVideosInclusos,
+                          BigDecimal valorFotoExtra, List<FaixaFotoExtra> faixasFotoExtra,
+                          PromocaoPacote promocao) {
         aplicar(nome, duracaoMinutos, valor, descricao, corHex, itensInclusos, ativo,
-                quantidadeFotosInclusas, quantidadeVideosInclusos, valorFotoExtra, promocao);
+                quantidadeFotosInclusas, quantidadeVideosInclusos, valorFotoExtra,
+                faixasFotoExtra, promocao);
         auditoria.marcarAtualizacao();
     }
 
@@ -131,10 +177,22 @@ public class Pacote {
         return List.copyOf(itensInclusos);
     }
 
+    /** Copia defensiva das faixas de foto extra. */
+    public List<FaixaFotoExtra> getFaixasFotoExtra() {
+        return List.copyOf(faixasFotoExtra);
+    }
+
+    public List<FaixaFotoExtraSnapshot> faixasFotoExtraSnapshot() {
+        return faixasFotoExtra.stream()
+                .map(FaixaFotoExtra::paraSnapshot)
+                .toList();
+    }
+
     private void aplicar(String nome, int duracaoMinutos, BigDecimal valor, String descricao,
                          String corHex, List<String> itensInclusos, boolean ativo,
                          int quantidadeFotosInclusas, int quantidadeVideosInclusos,
-                         BigDecimal valorFotoExtra, PromocaoPacote promocao) {
+                         BigDecimal valorFotoExtra, List<FaixaFotoExtra> faixasFotoExtra,
+                         PromocaoPacote promocao) {
         this.nome = nome;
         this.duracaoMinutos = duracaoMinutos;
         this.valor = valor;
@@ -145,6 +203,8 @@ public class Pacote {
         this.quantidadeFotosInclusas = Math.max(0, quantidadeFotosInclusas);
         this.quantidadeVideosInclusos = Math.max(0, quantidadeVideosInclusos);
         this.valorFotoExtra = valorFotoExtra == null ? BigDecimal.ZERO : valorFotoExtra;
+        this.faixasFotoExtra = faixasFotoExtra == null
+                ? new ArrayList<>() : new ArrayList<>(faixasFotoExtra);
         this.promocao = promocao;
     }
 }

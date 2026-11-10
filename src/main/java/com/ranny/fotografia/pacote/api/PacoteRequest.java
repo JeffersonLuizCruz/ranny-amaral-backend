@@ -54,8 +54,23 @@ public record PacoteRequest(
         BigDecimal valorFotoExtra,
 
         @Valid
+        @Size(max = 20, message = "deve ter no maximo 20 faixas")
+        List<FaixaFotoExtraRequest> faixasFotoExtra,
+
+        @Valid
         PromocaoRequest promocao
 ) {
+
+    public record FaixaFotoExtraRequest(
+            @NotNull(message = "nao pode ser nulo")
+            @Positive(message = "deve ser maior que zero")
+            Integer quantidadeMinima,
+
+            @NotNull(message = "nao pode ser nulo")
+            @PositiveOrZero(message = "deve ser maior ou igual a zero")
+            BigDecimal valorUnitario
+    ) {
+    }
 
     public record PromocaoRequest(
             Boolean ativa,

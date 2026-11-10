@@ -364,6 +364,7 @@ public class AgendaService implements AgendamentoConsulta {
                 pacote.quantidadeVideosInclusos(),
                 pacote.valorFotoExtra(),
                 pacote.valor(),
+                pacote.faixasFotoExtra(),
                 promocao);
     }
 
@@ -414,6 +415,7 @@ public class AgendaService implements AgendamentoConsulta {
                         condicoes.getQuantidadeVideosInclusos(),
                         condicoes.getValorFotoExtra(),
                         condicoes.getValorTabela(),
+                        condicoes.getFaixasFotoExtra(),
                         condicoes.getPromocaoAplicada() == null ? null : condicoes.getPromocaoAplicada().getValorPromocional(),
                         condicoes.getPromocaoAplicada() == null ? null : condicoes.getPromocaoAplicada().getRotulo()));
     }

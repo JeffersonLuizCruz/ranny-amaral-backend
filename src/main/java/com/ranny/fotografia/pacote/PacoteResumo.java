@@ -1,5 +1,7 @@
 package com.ranny.fotografia.pacote;
 
+import com.ranny.fotografia.shared.model.FaixaFotoExtraSnapshot;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -26,12 +28,14 @@ public record PacoteResumo(
         int quantidadeFotosInclusas,
         int quantidadeVideosInclusos,
         BigDecimal valorFotoExtra,
+        List<FaixaFotoExtraSnapshot> faixasFotoExtra,
         PromocaoResumo promocao,
         boolean ativo
 ) {
 
     public PacoteResumo {
         itensInclusos = itensInclusos == null ? List.of() : List.copyOf(itensInclusos);
+        faixasFotoExtra = faixasFotoExtra == null ? List.of() : List.copyOf(faixasFotoExtra);
     }
 
     public Optional<PromocaoResumo> promocaoAplicada(Instant referencia) {

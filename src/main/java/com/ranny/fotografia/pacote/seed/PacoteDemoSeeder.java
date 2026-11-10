@@ -1,5 +1,6 @@
 package com.ranny.fotografia.pacote.seed;
 
+import com.ranny.fotografia.pacote.model.FaixaFotoExtra;
 import com.ranny.fotografia.pacote.model.Pacote;
 import com.ranny.fotografia.pacote.model.PromocaoPacote;
 import com.ranny.fotografia.pacote.repository.PacoteRepository;
@@ -64,6 +65,7 @@ public class PacoteDemoSeeder implements ApplicationRunner {
                 "#E11D48",
                 List.of("20 fotos tratadas", "Galeria online por 30 dias"),
                 true, 20, 0, new BigDecimal("15.00"),
+                List.of(FaixaFotoExtra.de(11, new BigDecimal("10.00"))),
                 PromocaoPacote.de(true, new BigDecimal("200.00"), null, "Leve 20 fotos por R$ 10 cada")));
     }
 }

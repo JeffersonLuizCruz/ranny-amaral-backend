@@ -2,6 +2,7 @@ package com.ranny.fotografia.contrato.service;
 
 import com.ranny.fotografia.contrato.model.documento.ContratoClausula;
 import com.ranny.fotografia.contrato.model.documento.ContratoSnapshot;
+import com.ranny.fotografia.shared.model.FaixaFotoExtraSnapshot;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -83,6 +84,8 @@ public class ResolvedorClausulas {
             variaveis.put("pacote.fotosInclusas", String.valueOf(pacote.quantidadeFotosInclusas()));
             variaveis.put("pacote.videosInclusos", String.valueOf(pacote.quantidadeVideosInclusos()));
             variaveis.put("pacote.valorFotoExtra", moeda(pacote.valorFotoExtra()));
+            variaveis.put("pacote.regraFotoExtra",
+                    regraFotoExtra(pacote.valorFotoExtra(), pacote.faixasFotoExtra()));
         }
         ContratoSnapshot.AgendamentoSnapshot agendamento = snapshot.agendamento();
         if (agendamento != null && agendamento.dataHoraInicio() != null) {
@@ -108,6 +111,45 @@ public class ResolvedorClausulas {
             resultado = resultado.replace("{{" + entrada.getKey() + "}}", entrada.getValue());
         }
         return resultado;
+    }
+
+    private static String regraFotoExtra(BigDecimal valorBase,
+                                         List<FaixaFotoExtraSnapshot> faixas) {
+        if (faixas == null || faixas.isEmpty()) {
+            return moeda(valorBase) + " por foto extra";
+        }
+        List<FaixaFotoExtraSnapshot> ordenadas = faixas.stream()
+                .filter(faixa -> faixa != null && faixa.quantidadeMinima() > 0)
+                .sorted(java.util.Comparator.comparingInt(FaixaFotoExtraSnapshot::quantidadeMinima))
+                .toList();
+        if (ordenadas.isEmpty()) {
+            return moeda(valorBase) + " por foto extra";
+        }
+        StringBuilder texto = new StringBuilder();
+        int primeiraFaixa = ordenadas.get(0).quantidadeMinima();
+        if (primeiraFaixa > 2) {
+            texto.append(moeda(valorBase))
+                    .append(" da 1a a ").append(primeiraFaixa - 1).append("a foto extra");
+        } else if (primeiraFaixa == 2) {
+            texto.append(moeda(valorBase)).append(" na 1a foto extra");
+        }
+        for (int i = 0; i < ordenadas.size(); i++) {
+            if (texto.length() > 0) {
+                texto.append("; ");
+            }
+            FaixaFotoExtraSnapshot faixa = ordenadas.get(i);
+            int proxima = i + 1 < ordenadas.size()
+                    ? ordenadas.get(i + 1).quantidadeMinima()
+                    : Integer.MAX_VALUE;
+            texto.append(moeda(faixa.valorUnitario())).append(" da ")
+                    .append(faixa.quantidadeMinima()).append("a foto extra");
+            if (proxima != Integer.MAX_VALUE) {
+                texto.append(" a ").append(proxima - 1).append("a");
+            } else {
+                texto.append(" em diante");
+            }
+        }
+        return texto.toString();
     }
 
     private static String moeda(BigDecimal valor) {

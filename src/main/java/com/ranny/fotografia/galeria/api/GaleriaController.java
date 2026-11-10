@@ -131,6 +131,13 @@ public class GaleriaController {
         return galeriaService.reabrirSelecao(id);
     }
 
+    @PostMapping("/{id}/selecao/download")
+    @Operation(summary = "Prepara o download das fotos selecionadas para edicao")
+    public GaleriaDtos.DownloadSelecaoResponse prepararDownloadSelecao(
+            @PathVariable String id) {
+        return galeriaService.prepararDownloadSelecao(id);
+    }
+
     @PostMapping("/{id}/extras/confirmar")
     @Operation(summary = "Confirma o pagamento dos extras")
     public GaleriaDtos.PedidoExtrasResponse confirmarExtras(

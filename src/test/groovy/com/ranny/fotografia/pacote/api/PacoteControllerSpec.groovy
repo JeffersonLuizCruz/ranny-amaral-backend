@@ -95,6 +95,67 @@ class PacoteControllerSpec extends Specification {
         JsonCorpo.mapa(resultado).quantidadeVideosInclusos == 0
     }
 
+    def "cria pacote com faixas progressivas de foto extra"() {
+        given:
+        def corpo = [
+                nome                    : "Retrato com faixas",
+                duracaoMinutos          : 45,
+                valor                   : 300.00,
+                descricao               : "Faixas progressivas.",
+                corHex                  : "#E11D48",
+                itensInclusos           : ["20 fotos tratadas"],
+                quantidadeFotosInclusas : 20,
+                quantidadeVideosInclusos: 0,
+                valorFotoExtra          : 15.00,
+                faixasFotoExtra         : [
+                        [quantidadeMinima: 11, valorUnitario: 10.00],
+                        [quantidadeMinima: 21, valorUnitario: 8.00]
+                ],
+                ativo                   : true
+        ]
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/pacotes")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json(corpo)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath('$.faixasFotoExtra[0].quantidadeMinima').value(11))
+                .andExpect(jsonPath('$.faixasFotoExtra[0].valorUnitario').value(10.0d))
+                .andExpect(jsonPath('$.faixasFotoExtra[1].quantidadeMinima').value(21))
+                .andExpect(jsonPath('$.faixasFotoExtra[1].valorUnitario').value(8.0d))
+                .andReturn()
+
+        then:
+        JsonCorpo.mapa(resultado).faixasFotoExtra.size() == 2
+    }
+
+    def "rejeita faixa que nao comeca depois do preco base"() {
+        given:
+        def corpo = [
+                nome                    : "Faixa invalida",
+                duracaoMinutos          : 45,
+                valor                   : 300.00,
+                descricao               : "Faixa invalida.",
+                corHex                  : "#E11D48",
+                itensInclusos           : ["20 fotos tratadas"],
+                quantidadeFotosInclusas : 20,
+                quantidadeVideosInclusos: 0,
+                valorFotoExtra          : 15.00,
+                faixasFotoExtra         : [[quantidadeMinima: 1, valorUnitario: 10.00]],
+                ativo                   : true
+        ]
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/pacotes")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json(corpo)))
+                .andReturn()
+
+        then:
+        resultado.response.status == 400
+        JsonCorpo.mapa(resultado).codigo == "FAIXA_FOTO_EXTRA_INVALIDA"
+    }
+
     def "aceita pacote com descricao vazia"() {
         given:
         def corpo = [

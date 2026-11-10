@@ -16,6 +16,7 @@ import com.ranny.fotografia.shared.financeiro.ResumoPagamento;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.List;
 
 /**
  * DTO de saida do agendamento.
@@ -157,6 +158,7 @@ public record AgendamentoResponse(
             int quantidadeVideosInclusos,
             BigDecimal valorFotoExtra,
             BigDecimal valorTabela,
+            List<FaixaFotoExtraResponse> faixasFotoExtra,
             PromocaoAplicadaResponse promocaoAplicada
     ) {
 
@@ -169,7 +171,20 @@ public record AgendamentoResponse(
                     condicoes.getQuantidadeVideosInclusos(),
                     condicoes.getValorFotoExtra(),
                     condicoes.getValorTabela(),
+                    condicoes.getFaixasFotoExtra().stream()
+                            .map(FaixaFotoExtraResponse::de)
+                            .toList(),
                     PromocaoAplicadaResponse.de(condicoes.getPromocaoAplicada()));
+        }
+    }
+
+    public record FaixaFotoExtraResponse(int quantidadeMinima, BigDecimal valorUnitario) {
+
+        static FaixaFotoExtraResponse de(
+                com.ranny.fotografia.shared.model.FaixaFotoExtraSnapshot faixa) {
+            return new FaixaFotoExtraResponse(
+                    faixa.quantidadeMinima(),
+                    faixa.valorUnitario());
         }
     }
 

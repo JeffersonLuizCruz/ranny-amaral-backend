@@ -1,6 +1,7 @@
 package com.ranny.fotografia.contrato.model.documento;
 
 import com.ranny.fotografia.shared.model.TipoDocumento;
+import com.ranny.fotografia.shared.model.FaixaFotoExtraSnapshot;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -42,9 +43,14 @@ public record ContratoSnapshot(
             int quantidadeFotosInclusas,
             int quantidadeVideosInclusos,
             BigDecimal valorFotoExtra,
+            List<FaixaFotoExtraSnapshot> faixasFotoExtra,
             PromocaoSnapshot promocaoAplicada,
             BigDecimal valorEfetivo
     ) {
+        public PacoteSnapshot {
+            itensInclusos = itensInclusos == null ? List.of() : List.copyOf(itensInclusos);
+            faixasFotoExtra = faixasFotoExtra == null ? List.of() : List.copyOf(faixasFotoExtra);
+        }
     }
 
     public record PromocaoSnapshot(BigDecimal valorPromocional, String rotulo) {

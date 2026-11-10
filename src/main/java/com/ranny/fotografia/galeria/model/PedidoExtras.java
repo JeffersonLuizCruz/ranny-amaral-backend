@@ -1,8 +1,11 @@
 package com.ranny.fotografia.galeria.model;
 
+import com.ranny.fotografia.shared.financeiro.FaixaAplicada;
+import com.ranny.fotografia.shared.financeiro.FaixasAplicadasConverter;
 import com.ranny.fotografia.shared.model.Auditoria;
 import com.ranny.fotografia.shared.model.FormaPagamentoSaldo;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -16,6 +19,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /** Pedido de fotos extras gerado pela selecao. */
@@ -47,6 +51,10 @@ public class PedidoExtras {
 
     @Column(name = "valor_total", nullable = false, precision = 10, scale = 2)
     private BigDecimal valorTotal;
+
+    @Convert(converter = FaixasAplicadasConverter.class)
+    @Column(name = "detalhamento_extras", columnDefinition = "text")
+    private List<FaixaAplicada> detalhamento;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -92,6 +100,14 @@ public class PedidoExtras {
     public static PedidoExtras criar(String galeriaId, String selecaoId, int quantidade,
                                      BigDecimal valorUnitario, BigDecimal valorTotal,
                                      String chavePix, String instrucoesPagamento) {
+        return criar(galeriaId, selecaoId, quantidade, valorUnitario, valorTotal,
+                List.of(), chavePix, instrucoesPagamento);
+    }
+
+    public static PedidoExtras criar(String galeriaId, String selecaoId, int quantidade,
+                                     BigDecimal valorUnitario, BigDecimal valorTotal,
+                                     List<FaixaAplicada> detalhamento,
+                                     String chavePix, String instrucoesPagamento) {
         PedidoExtras pedido = new PedidoExtras();
         pedido.id = UUID.randomUUID().toString();
         pedido.galeriaId = galeriaId;
@@ -99,6 +115,7 @@ public class PedidoExtras {
         pedido.quantidadeFotos = quantidade;
         pedido.valorUnitario = valorUnitario;
         pedido.valorTotal = valorTotal;
+        pedido.detalhamento = detalhamento == null ? List.of() : List.copyOf(detalhamento);
         pedido.chavePix = chavePix;
         pedido.instrucoesPagamento = instrucoesPagamento;
         pedido.status = PedidoExtrasStatus.PENDENTE;
@@ -106,8 +123,12 @@ public class PedidoExtras {
         return pedido;
     }
 
-    public void pagar(FormaPagamentoSaldo forma, String por) {
-        this.status = PedidoExtrasStatus.PAGO;
+    /** Copia defensiva do detalhamento progressivo. */
+    public List<FaixaAplicada> getDetalhamento() {
+        return detalhamento == null ? List.of() : List.copyOf(detalhamento);
+    }
+
+    public void pagar(FormaPagamentoSaldo forma, String por) {        this.status = PedidoExtrasStatus.PAGO;
         this.formaPagamento = forma;
         this.confirmadoEm = Instant.now();
         this.confirmadoPor = por;

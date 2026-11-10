@@ -4,12 +4,14 @@ import com.ranny.fotografia.pacote.PacoteConsulta;
 import com.ranny.fotografia.pacote.PacoteResumo;
 import com.ranny.fotografia.pacote.api.PacoteRequest;
 import com.ranny.fotografia.pacote.api.PacoteResponse;
+import com.ranny.fotografia.pacote.model.FaixaFotoExtra;
 import com.ranny.fotografia.pacote.model.Pacote;
 import com.ranny.fotografia.pacote.model.PromocaoPacote;
 import com.ranny.fotografia.pacote.repository.PacoteRepository;
 import com.ranny.fotografia.shared.api.PaginaResponse;
 import com.ranny.fotografia.shared.api.Paginacao;
 import com.ranny.fotografia.shared.exception.ConflitoException;
+import com.ranny.fotografia.shared.exception.RequisicaoInvalidaException;
 import com.ranny.fotografia.shared.exception.RecursoNaoEncontradoException;
 import com.ranny.fotografia.shared.ports.VerificadorVinculoPacote;
 import org.springframework.data.domain.Page;
@@ -18,9 +20,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -80,6 +86,7 @@ public class PacoteService implements PacoteConsulta {
                 resolverQuantidade(request.quantidadeFotosInclusas(), itens, PADRAO_FOTOS),
                 resolverQuantidade(request.quantidadeVideosInclusos(), itens, PADRAO_VIDEOS),
                 resolverValorFotoExtra(request.valorFotoExtra()),
+                montarFaixas(request.faixasFotoExtra()),
                 montarPromocao(request.promocao()));
         return PacoteResponse.de(pacoteRepository.save(pacote));
     }
@@ -99,6 +106,7 @@ public class PacoteService implements PacoteConsulta {
                 resolverQuantidade(request.quantidadeFotosInclusas(), itens, PADRAO_FOTOS),
                 resolverQuantidade(request.quantidadeVideosInclusos(), itens, PADRAO_VIDEOS),
                 resolverValorFotoExtra(request.valorFotoExtra()),
+                montarFaixas(request.faixasFotoExtra()),
                 montarPromocao(request.promocao()));
         return PacoteResponse.de(pacote);
     }
@@ -170,6 +178,31 @@ public class PacoteService implements PacoteConsulta {
                 .toList();
     }
 
+    private static List<FaixaFotoExtra> montarFaixas(
+            List<PacoteRequest.FaixaFotoExtraRequest> faixas) {
+        if (faixas == null || faixas.isEmpty()) {
+            return List.of();
+        }
+        List<FaixaFotoExtra> ordenadas = faixas.stream()
+                .filter(Objects::nonNull)
+                .map(faixa -> FaixaFotoExtra.de(
+                        faixa.quantidadeMinima(), faixa.valorUnitario()))
+                .sorted(Comparator.comparingInt(FaixaFotoExtra::getQuantidadeMinima))
+                .toList();
+        Set<Integer> minimos = new HashSet<>();
+        for (FaixaFotoExtra faixa : ordenadas) {
+            if (faixa.getQuantidadeMinima() < 2) {
+                throw new RequisicaoInvalidaException("FAIXA_FOTO_EXTRA_INVALIDA",
+                        "A primeira faixa deve comecar na 2a foto extra.");
+            }
+            if (!minimos.add(faixa.getQuantidadeMinima())) {
+                throw new RequisicaoInvalidaException("FAIXA_FOTO_EXTRA_INVALIDA",
+                        "Nao repita a mesma quantidade minima nas faixas de foto extra.");
+            }
+        }
+        return ordenadas;
+    }
+
     private static PromocaoPacote montarPromocao(PacoteRequest.PromocaoRequest promocao) {
         if (promocao == null) {
             return null;
@@ -197,6 +230,7 @@ public class PacoteService implements PacoteConsulta {
                 pacote.getQuantidadeFotosInclusas(),
                 pacote.getQuantidadeVideosInclusos(),
                 pacote.getValorFotoExtra(),
+                pacote.faixasFotoExtraSnapshot(),
                 promocao,
                 pacote.isAtivo());
     }

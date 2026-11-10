@@ -1,6 +1,7 @@
 package com.ranny.fotografia.agenda;
 
 import com.ranny.fotografia.agenda.model.StatusAgendamento;
+import com.ranny.fotografia.shared.model.FaixaFotoExtraSnapshot;
 import com.ranny.fotografia.shared.model.PagamentoStatus;
 
 import java.math.BigDecimal;
@@ -67,9 +68,13 @@ public interface AgendamentoConsulta {
                 int quantidadeVideosInclusos,
                 BigDecimal valorFotoExtra,
                 BigDecimal valorTabela,
+                List<FaixaFotoExtraSnapshot> faixasFotoExtra,
                 BigDecimal promocaoValor,
                 String promocaoRotulo
         ) {
+            public CondicoesResumo {
+                faixasFotoExtra = faixasFotoExtra == null ? List.of() : List.copyOf(faixasFotoExtra);
+            }
         }
     }
 }

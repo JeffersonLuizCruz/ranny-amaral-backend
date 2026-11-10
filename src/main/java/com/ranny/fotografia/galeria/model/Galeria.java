@@ -1,7 +1,10 @@
 package com.ranny.fotografia.galeria.model;
 
 import com.ranny.fotografia.shared.model.Auditoria;
+import com.ranny.fotografia.shared.model.FaixaFotoExtraSnapshot;
+import com.ranny.fotografia.shared.model.FaixasFotoExtraConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -15,6 +18,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -67,6 +71,10 @@ public class Galeria {
     @Column(name = "valor_foto_extra", nullable = false, precision = 10, scale = 2)
     private BigDecimal valorFotoExtra;
 
+    @Convert(converter = FaixasFotoExtraConverter.class)
+    @Column(name = "faixas_foto_extra", columnDefinition = "text")
+    private List<FaixaFotoExtraSnapshot> faixasFotoExtra;
+
     @Column(name = "selecao_atual_id", length = 64)
     private String selecaoAtualId;
 
@@ -88,6 +96,14 @@ public class Galeria {
     public static Galeria criar(String estudioId, String agendamentoId, String contratoId,
                                 String clienteId, String clienteNome, int fotosInclusas,
                                 int videosInclusos, BigDecimal valorFotoExtra) {
+        return criar(estudioId, agendamentoId, contratoId, clienteId, clienteNome,
+                fotosInclusas, videosInclusos, valorFotoExtra, List.of());
+    }
+
+    public static Galeria criar(String estudioId, String agendamentoId, String contratoId,
+                                String clienteId, String clienteNome, int fotosInclusas,
+                                int videosInclusos, BigDecimal valorFotoExtra,
+                                List<FaixaFotoExtraSnapshot> faixasFotoExtra) {
         Galeria galeria = new Galeria();
         galeria.id = UUID.randomUUID().toString();
         galeria.estudioId = estudioId;
@@ -99,8 +115,15 @@ public class Galeria {
         galeria.fotosInclusas = Math.max(0, fotosInclusas);
         galeria.videosInclusos = Math.max(0, videosInclusos);
         galeria.valorFotoExtra = valorFotoExtra == null ? BigDecimal.ZERO : valorFotoExtra;
+        galeria.faixasFotoExtra = faixasFotoExtra == null
+                ? List.of() : List.copyOf(faixasFotoExtra);
         galeria.auditoria = Auditoria.iniciar();
         return galeria;
+    }
+
+    /** Copia defensiva das faixas congeladas na criacao da galeria. */
+    public List<FaixaFotoExtraSnapshot> getFaixasFotoExtra() {
+        return faixasFotoExtra == null ? List.of() : List.copyOf(faixasFotoExtra);
     }
 
     public void publicarSelecao() {

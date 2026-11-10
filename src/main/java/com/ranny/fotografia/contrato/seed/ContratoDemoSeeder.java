@@ -180,8 +180,8 @@ public class ContratoDemoSeeder implements ApplicationRunner {
                 new ContratoClausula("cl-servicos", "2. Serviços contratados e entregas",
                         "O pacote contratado é {{pacote.nome}}, com duração de {{pacote.duracao}}, no valor de "
                                 + "{{pacote.valor}}. Estão inclusos: {{pacote.itens}}. O pacote inclui "
-                                + "{{pacote.fotosInclusas}} fotos e {{pacote.videosInclusos}} vídeos. Cada foto "
-                                + "adicional custa {{pacote.valorFotoExtra}}. O ensaio ocorrerá em "
+                                + "{{pacote.fotosInclusas}} fotos e {{pacote.videosInclusos}} vídeos. A regra "
+                                + "para fotos adicionais é: {{pacote.regraFotoExtra}}. O ensaio ocorrerá em "
                                 + "{{agendamento.data}}, às {{agendamento.horario}}, em {{agendamento.local}}."),
                 new ContratoClausula("cl-imagem", "3. Direitos autorais e uso de imagem",
                         "O contratante autoriza o uso das imagens para portfólio, site e redes sociais do "
