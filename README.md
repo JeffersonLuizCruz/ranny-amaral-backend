@@ -118,6 +118,7 @@ com.ranny.fotografia
 - `src/main/resources/db/migration/V12__faixas_foto_extra.sql` adiciona as faixas progressivas de preço da foto extra no catálogo e os snapshots JSON em agendamentos, galerias e pedidos de extras.
 - `src/main/resources/db/migration/V13__zip_baixado_galeria.sql` adiciona `zip_baixado_em` na galeria, com backfill dos ZIPs antigos a partir do histórico.
 - `src/main/resources/db/migration/V14__remove_pronta_entrega.sql` remove o estado `PRONTA_ENTREGA`, converte as galerias existentes e ajusta o check constraint.
+- `src/main/resources/db/migration/V15__extras_adicionais.sql` adiciona `selecao_entregue_id` na galeria (trava de mídias já entregues) e o índice de busca do pedido de extras pendente.
 - O Flyway é a fonte de verdade do schema; o Hibernate apenas valida (`ddl-auto=validate`).
 - **Nunca edite uma migração já aplicada.** Mudanças entram em `V15__...`, `V16__...`, etc.
 - `spring.flyway.baseline-on-migrate=true` protege bancos não vazios sem histórico; em banco novo, a V1 é aplicada normalmente.
@@ -248,12 +249,21 @@ bucket. O download do staff agora é protegido pelo JWT.
 - Extras usam uma **chave Pix própria do estúdio**, separada da chave do ensaio, e o pedido guarda um
   snapshot dessa chave. O cliente envia o comprovante Pix pelo link de seleção; o staff confirma o
   recebimento antes de iniciar a edição.
+- **Extras adicionais:** o staff pode reabrir a seleção mesmo com pedidos já pagos ou isentos. Os pedidos
+  anteriores são preservados e o reenvio gera um novo pedido apenas com o **delta** de fotos, calculado
+  pelas faixas progressivas congeladas na galeria. A reabertura é sempre uma ação do staff; o cliente
+  combina a compra diretamente com o estúdio.
+- **Mídias entregues:** ao publicar a entrega, a seleção é registrada em `selecao_entregue_id`. Em
+  reaberturas futuras, todas as fotos e vídeos dessa seleção continuam obrigatórios; o cliente só pode
+  acrescentar novas mídias. Isso impede trocar fotos já baixadas por outras sem pagar o adicional.
 - Regras:
   - ensaio realizado e pagamentos quitados para publicar a seleção;
   - fotos selecionadas ≥ fotos inclusas;
   - vídeos exatamente iguais aos inclusos;
   - fotos extras geram pedido de extras;
+  - reenvio com menos extras do que o já pago é bloqueado;
   - confirmação Pix dos extras exige comprovante;
+  - qualquer pedido de extras pendente bloqueia o início da edição e a publicação da entrega;
   - entrega exige extras pagos ou isentos.
 - Rotas administrativas e públicas estão em `/api/v1/galerias` e `/api/v1/public/galerias`.
 
@@ -262,7 +272,7 @@ bucket. O download do staff agora é protegido pelo JWT.
 - `GET /api/v1/financeiro/mensal?mes=YYYY-MM` retorna o resumo consolidado e as entradas do mês.
 - Competência pelo início do ensaio no fuso `America/Sao_Paulo`.
 - Contrato vinculado tem prioridade sobre os valores do agendamento.
-- Extras vêm do pedido de extras da galeria.
+- Extras vêm dos pedidos de extras da galeria, que podem ser cumulativos (pedido inicial + adicionais).
 - Agendamentos cancelados e extras cancelados/isentos não inflam o previsto.
 - O backend calcula totais, recebidos, a receber, ticket médio e percentual recebido.
 - A tela não recalcula valores localmente.

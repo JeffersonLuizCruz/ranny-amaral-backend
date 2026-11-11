@@ -45,7 +45,7 @@ import com.ranny.fotografia.shared.model.FormaPagamentoSaldo;
 import com.ranny.fotografia.shared.exception.RecursoNaoEncontradoException;
 import com.ranny.fotografia.shared.exception.RegraDeNegocioException;
 import com.ranny.fotografia.shared.financeiro.CalculadoraExtras;
-import com.ranny.fotografia.shared.financeiro.ResultadoExtras;
+import com.ranny.fotografia.shared.financeiro.ResultadoDeltaExtras;
 import com.ranny.fotografia.shared.model.FaixaFotoExtraSnapshot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -212,17 +212,24 @@ public class GaleriaService implements GaleriaConsulta {
                 .toList();
         SelecaoGaleria selecao = selecaoRepository
                 .findFirstByGaleriaIdOrderByEnviadaEmDesc(id).orElse(null);
-        PedidoExtras extras = extrasRepository
-                .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(id).orElse(null);
+        List<PedidoExtras> pedidosExtras = extrasRepository
+                .findByGaleriaIdOrderByAuditoriaCriadoEmAsc(id);
+        PedidoExtras extras = pedidosExtras.isEmpty()
+                ? null : pedidosExtras.get(pedidosExtras.size() - 1);
         List<GaleriaDtos.EventoResponse> historico = eventoRepository
                 .findByGaleriaIdOrderByCriadoEmAsc(id).stream()
                 .map(GaleriaDtos.EventoResponse::de)
+                .toList();
+        List<GaleriaDtos.PedidoExtrasResponse> pedidos = pedidosExtras.stream()
+                .map(pedido -> extrasResponse(pedido, true))
                 .toList();
         return new GaleriaDtos.GaleriaDetalheResponse(
                 response(galeria),
                 links,
                 selecao == null ? null : selecaoResponse(selecao),
                 extras == null ? null : extrasResponse(extras, true),
+                pedidos,
+                resumoExtras(galeria, pedidosExtras),
                 historico);
     }
 
@@ -453,23 +460,22 @@ public class GaleriaService implements GaleriaConsulta {
     @Transactional
     public GaleriaDtos.LinkResponse reabrirSelecao(String galeriaId) {
         Galeria galeria = obter(galeriaId);
-        // Reabrir depois da entrega publicada derrubaria um link ativo e
-        // deixaria a galeria em EM_SELECAO sem uma entrega valida. A mudanca de
-        // estado precisa ser explicita (revogar entrega antes).
-        if (galeria.getStatus() == GaleriaStatus.ENTREGUE
-                || galeria.getStatus() == GaleriaStatus.CANCELADA) {
+        // A reabertura e sempre uma acao do staff. Depois da entrega publicada
+        // ela so pode ocorrer apos revogar a entrega, para nao derrubar um link
+        // ativo silenciosamente.
+        if (galeria.getStatus() != GaleriaStatus.EM_SELECAO
+                && galeria.getStatus() != GaleriaStatus.SELECAO_ENVIADA
+                && galeria.getStatus() != GaleriaStatus.EM_EDICAO) {
             throw new RegraDeNegocioException("SELECAO_NAO_REABRIVEL",
-                    "Nao e possivel reabrir a selecao apos a entrega ser publicada.");
+                    "Nao e possivel reabrir a selecao no status atual.");
         }
-        PedidoExtras extras = extrasRepository
-                .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeriaId).orElse(null);
-        if (extras != null && extras.getStatus() == PedidoExtrasStatus.PAGO) {
-            throw new RegraDeNegocioException("EXTRAS_JA_PAGOS",
-                    "Nao e possivel reabrir a selecao com extras pagos.");
-        }
-        if (extras != null && extras.getStatus() == PedidoExtrasStatus.PENDENTE) {
-            extras.cancelar();
-        }
+        List<PedidoExtras> pedidos = extrasRepository
+                .findByGaleriaIdOrderByAuditoriaCriadoEmAsc(galeriaId);
+        // Pedidos pagos ou isentos sao preservados: o reenvio cobra apenas o
+        // delta. Pedidos pendentes sao recalculados e por isso cancelados.
+        pedidos.stream()
+                .filter(pedido -> pedido.getStatus() == PedidoExtrasStatus.PENDENTE)
+                .forEach(PedidoExtras::cancelar);
         selecaoRepository.findFirstByGaleriaIdOrderByEnviadaEmDesc(galeriaId)
                 .ifPresent(SelecaoGaleria::reabrir);
         LinkGaleria link = linkRepository
@@ -481,7 +487,8 @@ public class GaleriaService implements GaleriaConsulta {
                 .orElseGet(() -> linkRepository.save(
                         LinkGaleria.criar(galeriaId, LinkGaleriaTipo.SELECAO, DIAS_SELECAO)));
         galeria.reabrirSelecao();
-        evento(galeria, EventoGaleriaTipo.SELECAO_REABERTA, "Selecao reaberta pelo estudio.");
+        evento(galeria, EventoGaleriaTipo.SELECAO_REABERTA,
+                "Selecao reaberta para compra de extras adicionais.");
         return GaleriaDtos.LinkResponse.de(link);
     }
 
@@ -521,10 +528,23 @@ public class GaleriaService implements GaleriaConsulta {
                     "Selecione exatamente %d video(s) incluso(s).".formatted(galeria.getVideosInclusos()));
         }
 
+        validarMidiasEntregues(galeria, fotos, videos);
+
+        List<PedidoExtras> pedidos = extrasRepository
+                .findByGaleriaIdOrderByAuditoriaCriadoEmAsc(galeria.getId());
+        int quantidadeCoberta = quantidadeCoberta(pedidos);
         int extras = Math.max(0, fotos.size() - galeria.getFotosInclusas());
-        ResultadoExtras resultadoExtras = CalculadoraExtras.calcular(
-                galeria.getValorFotoExtra(), galeria.getFaixasFotoExtra(), extras);
-        BigDecimal valorExtras = resultadoExtras.valorTotal();
+        if (extras < quantidadeCoberta) {
+            throw new RegraDeNegocioException("EXTRAS_ABAIXO_DO_PAGO",
+                    "A nova selecao tem menos fotos extras do que as ja cobertas "
+                            + "(pagas ou isentas). Fale com o estudio para ajustar a compra.");
+        }
+
+        ResultadoDeltaExtras delta = CalculadoraExtras.calcularDelta(
+                galeria.getValorFotoExtra(), galeria.getFaixasFotoExtra(),
+                extras, quantidadeCoberta);
+        BigDecimal valorExtras = CalculadoraExtras.calcular(
+                galeria.getValorFotoExtra(), galeria.getFaixasFotoExtra(), extras).valorTotal();
         String protocolo = "SEL-%d-%04d".formatted(LocalDate.now().getYear(),
                 selecaoRepository.count() + 1);
         SelecaoGaleria selecao = selecaoRepository.save(SelecaoGaleria.criar(
@@ -536,19 +556,23 @@ public class GaleriaService implements GaleriaConsulta {
         }
 
         PedidoExtras pedido = null;
-        if (extras > 0) {
+        if (delta.quantidade() > 0) {
             EstudioConsulta.DadosPagamentoExtras pagamentoExtras =
                     estudioConsulta.dadosPagamentoExtras();
             pedido = extrasRepository.save(PedidoExtras.criar(
-                    galeria.getId(), selecao.getId(), extras,
-                    galeria.getValorFotoExtra(), valorExtras, resultadoExtras.detalhamento(),
+                    galeria.getId(), selecao.getId(), delta.quantidade(),
+                    galeria.getValorFotoExtra(), delta.valorTotal(),
+                    delta.detalhamento(),
                     pagamentoExtras.chavePix(), pagamentoExtras.instrucoesPagamento()));
         }
         galeria.registrarSelecao(selecao.getId(), pedido == null ? null : pedido.getId());
         evento(galeria, EventoGaleriaTipo.SELECAO_ENVIADA,
                 pedido == null ? "Selecao enviada pelo cliente."
+                        : quantidadeCoberta > 0
+                        ? "Selecao enviada com %d foto(s) extra(s) adicional(is)."
+                        .formatted(delta.quantidade())
                         : "Selecao enviada com %d foto(s) extra(s).".formatted(extras));
-        if (pedido == null) {
+        if (!extrasRepository.existsByGaleriaIdAndStatus(galeria.getId(), PedidoExtrasStatus.PENDENTE)) {
             iniciarEdicaoComEvento(galeria, "Edicao iniciada automaticamente apos a selecao.");
         }
         return selecaoResponse(selecao);
@@ -558,13 +582,7 @@ public class GaleriaService implements GaleriaConsulta {
     public GaleriaDtos.PedidoExtrasResponse confirmarExtras(
             String galeriaId, GaleriaDtos.ExtrasConfirmacaoRequest request) {
         Galeria galeria = obter(galeriaId);
-        PedidoExtras pedido = extrasRepository
-                .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeriaId)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Pedido de extras", galeriaId));
-        if (pedido.getStatus() != PedidoExtrasStatus.PENDENTE) {
-            throw new RegraDeNegocioException("EXTRAS_NAO_PENDENTES",
-                    "Este pedido de extras nao esta pendente.");
-        }
+        PedidoExtras pedido = pedidoPendente(galeriaId);
         if (request.formaPagamento() == FormaPagamentoSaldo.PIX
                 && pedido.getComprovanteArquivoId() == null) {
             throw new RegraDeNegocioException("COMPROVANTE_OBRIGATORIO",
@@ -573,19 +591,19 @@ public class GaleriaService implements GaleriaConsulta {
         pedido.pagar(request.formaPagamento(),
                 request.confirmadoPor() == null ? "Equipe do estudio" : request.confirmadoPor());
         evento(galeria, EventoGaleriaTipo.EXTRAS_CONFIRMADOS, "Extras confirmados.");
-        iniciarEdicaoComEvento(galeria, "Edicao iniciada apos confirmacao dos extras.");
+        iniciarEdicaoSeSemExtrasPendentes(galeria,
+                "Edicao iniciada apos confirmacao dos extras.");
         return extrasResponse(pedido, true);
     }
 
     @Transactional
     public GaleriaDtos.PedidoExtrasResponse isentarExtras(String galeriaId, String por) {
         Galeria galeria = obter(galeriaId);
-        PedidoExtras pedido = extrasRepository
-                .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeriaId)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Pedido de extras", galeriaId));
+        PedidoExtras pedido = pedidoPendente(galeriaId);
         pedido.isentar(por == null ? "Equipe do estudio" : por);
         evento(galeria, EventoGaleriaTipo.EXTRAS_ISENTOS, "Extras isentos.");
-        iniciarEdicaoComEvento(galeria, "Edicao iniciada apos isencao dos extras.");
+        iniciarEdicaoSeSemExtrasPendentes(galeria,
+                "Edicao iniciada apos isencao dos extras.");
         return extrasResponse(pedido, true);
     }
 
@@ -593,12 +611,18 @@ public class GaleriaService implements GaleriaConsulta {
     public GaleriaDtos.PedidoExtrasResponse liberarEdicaoManual(
             String galeriaId, GaleriaDtos.LiberacaoEdicaoRequest request) {
         Galeria galeria = obter(galeriaId);
-        PedidoExtras pedido = extrasRepository
-                .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeriaId)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Pedido de extras", galeriaId));
+        PedidoExtras pedido = pedidoPendente(galeriaId);
         pedido.liberarManual(request.motivo(), request.por());
-        iniciarEdicaoComEvento(galeria, "Edicao liberada manualmente: " + request.motivo());
+        iniciarEdicaoSeSemExtrasPendentes(galeria,
+                "Edicao liberada manualmente: " + request.motivo());
         return extrasResponse(pedido, true);
+    }
+
+    private void iniciarEdicaoSeSemExtrasPendentes(Galeria galeria, String detalhe) {
+        if (!extrasRepository.existsByGaleriaIdAndStatus(
+                galeria.getId(), PedidoExtrasStatus.PENDENTE)) {
+            iniciarEdicaoComEvento(galeria, detalhe);
+        }
     }
 
     @Transactional
@@ -648,15 +672,11 @@ public class GaleriaService implements GaleriaConsulta {
     }
 
     private PedidoExtras pedidoPendente(String galeriaId) {
-        PedidoExtras pedido = extrasRepository
-                .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeriaId)
-                .orElseThrow(() -> new RegraDeNegocioException("SEM_EXTRAS",
-                        "Esta galeria nao possui pedido de extras."));
-        if (pedido.getStatus() != PedidoExtrasStatus.PENDENTE) {
-            throw new RegraDeNegocioException("EXTRAS_NAO_PENDENTES",
-                    "Este pedido de extras nao esta pendente.");
-        }
-        return pedido;
+        return extrasRepository
+                .findFirstByGaleriaIdAndStatusOrderByAuditoriaCriadoEmDesc(
+                        galeriaId, PedidoExtrasStatus.PENDENTE)
+                .orElseThrow(() -> new RegraDeNegocioException("SEM_EXTRAS_PENDENTES",
+                        "Esta galeria nao possui pedido de extras pendente."));
     }
 
     private GaleriaDtos.PedidoExtrasResponse extrasResponse(PedidoExtras pedido,
@@ -684,9 +704,8 @@ public class GaleriaService implements GaleriaConsulta {
     @Transactional
     public void iniciarEdicao(String galeriaId) {
         Galeria galeria = obter(galeriaId);
-        PedidoExtras pedido = extrasRepository
-                .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeriaId).orElse(null);
-        if (pedido != null && !pedido.estaQuitado()) {
+        if (extrasRepository.existsByGaleriaIdAndStatus(
+                galeriaId, PedidoExtrasStatus.PENDENTE)) {
             throw new RegraDeNegocioException("EXTRAS_PENDENTES",
                     "Confirme ou isente os extras antes de iniciar a edicao.");
         }
@@ -706,12 +725,15 @@ public class GaleriaService implements GaleriaConsulta {
             throw new RegraDeNegocioException("GALERIA_NAO_PRONTA",
                     "A galeria precisa estar em edicao para publicar a entrega.");
         }
-        PedidoExtras pedido = extrasRepository
-                .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeriaId).orElse(null);
-        if (pedido != null && !pedido.estaQuitado()) {
+        if (extrasRepository.existsByGaleriaIdAndStatus(
+                galeriaId, PedidoExtrasStatus.PENDENTE)) {
             throw new RegraDeNegocioException("EXTRAS_PENDENTES",
                     "Confirme ou isente os extras antes de publicar a entrega.");
         }
+        SelecaoGaleria selecao = selecaoRepository
+                .findFirstByGaleriaIdOrderByEnviadaEmDesc(galeriaId)
+                .orElseThrow(() -> new RegraDeNegocioException("SEM_SELECAO",
+                        "A galeria ainda nao possui selecao enviada."));
         long semEntrega = fotosSemEntrega(galeria);
         if (semEntrega > 0) {
             throw new RegraDeNegocioException("FOTOS_SEM_ENTREGA",
@@ -727,6 +749,7 @@ public class GaleriaService implements GaleriaConsulta {
                 })
                 .orElseGet(() -> linkRepository.save(
                         LinkGaleria.criar(galeriaId, LinkGaleriaTipo.ENTREGA, DIAS_ENTREGA)));
+        galeria.registrarSelecaoEntregue(selecao.getId());
         galeria.publicarEntrega();
         evento(galeria, EventoGaleriaTipo.ENTREGA_PUBLICADA,
                 "Link de entrega publicado por %d dias.".formatted(DIAS_ENTREGA));
@@ -786,8 +809,10 @@ public class GaleriaService implements GaleriaConsulta {
 
         SelecaoGaleria selecao = selecaoRepository
                 .findFirstByGaleriaIdOrderByEnviadaEmDesc(galeria.getId()).orElse(null);
-        PedidoExtras extras = extrasRepository
-                .findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeria.getId()).orElse(null);
+        List<PedidoExtras> pedidosExtras = extrasRepository
+                .findByGaleriaIdOrderByAuditoriaCriadoEmAsc(galeria.getId());
+        PedidoExtras extras = pedidosExtras.isEmpty()
+                ? null : pedidosExtras.get(pedidosExtras.size() - 1);
         // O original so pode aparecer no payload publico quando o RAW foi
         // liberado explicitamente. A URL do download continua sendo gerada sob
         // demanda pelo endpoint que valida o gate e registra o evento.
@@ -800,6 +825,8 @@ public class GaleriaService implements GaleriaConsulta {
                         exporOriginal)).toList(),
                 selecao == null ? null : selecaoResponse(selecao),
                 extras == null ? null : extrasResponse(extras, false),
+                resumoExtras(galeria, pedidosExtras),
+                midiasEntregues(galeria),
                 link.getTipo() == LinkGaleriaTipo.ENTREGA
                         && galeria.getStatus() == GaleriaStatus.ENTREGUE);
     }
@@ -1400,6 +1427,99 @@ public class GaleriaService implements GaleriaConsulta {
         }
     }
 
+    private int quantidadeCoberta(List<PedidoExtras> pedidos) {
+        return pedidos.stream()
+                .filter(pedido -> pedido.getStatus() == PedidoExtrasStatus.PAGO
+                        || pedido.getStatus() == PedidoExtrasStatus.ISENTO)
+                .mapToInt(PedidoExtras::getQuantidadeFotos)
+                .sum();
+    }
+
+    private GaleriaDtos.ResumoExtrasResponse resumoExtras(Galeria galeria,
+                                                          List<PedidoExtras> pedidos) {
+        int quantidadeCoberta = quantidadeCoberta(pedidos);
+        int quantidadePendente = pedidos.stream()
+                .filter(pedido -> pedido.getStatus() == PedidoExtrasStatus.PENDENTE)
+                .mapToInt(PedidoExtras::getQuantidadeFotos)
+                .sum();
+        BigDecimal valorPendente = pedidos.stream()
+                .filter(pedido -> pedido.getStatus() == PedidoExtrasStatus.PENDENTE)
+                .map(PedidoExtras::getValorTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal valorCoberto = CalculadoraExtras.calcular(
+                galeria.getValorFotoExtra(), galeria.getFaixasFotoExtra(),
+                quantidadeCoberta).valorTotal();
+        return new GaleriaDtos.ResumoExtrasResponse(
+                quantidadeCoberta + quantidadePendente,
+                valorCoberto.add(valorPendente),
+                quantidadeCoberta,
+                valorCoberto,
+                quantidadePendente,
+                valorPendente);
+    }
+
+    private List<String> midiasEntregues(Galeria galeria) {
+        if (galeria.getSelecaoEntregueId() == null) {
+            return List.of();
+        }
+        List<String> ids = selecaoItemRepository
+                .findBySelecaoId(galeria.getSelecaoEntregueId()).stream()
+                .map(SelecaoItem::getMidiaId)
+                .toList();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        // Midias removidas pelo staff deixam de ser obrigatorias; o cliente ja
+        // recebeu os arquivos e nao conseguiria reenvia-las de qualquer forma.
+        return midiaRepository
+                .findByGaleriaIdAndIdInAndStatus(galeria.getId(), ids, MidiaStatus.DISPONIVEL)
+                .stream()
+                .map(MidiaGaleria::getId)
+                .toList();
+    }
+
+    /**
+     * Garante que midias ja entregues permanecam na nova selecao.
+     *
+     * <p>Sem essa trava o cliente poderia trocar fotos ja baixadas por outras
+     * mantendo a mesma quantidade de extras e pagando zero pelo novo conjunto.
+     */
+    private void validarMidiasEntregues(Galeria galeria, List<String> fotos,
+                                        List<String> videos) {
+        if (galeria.getSelecaoEntregueId() == null) {
+            return;
+        }
+        List<SelecaoItem> itens = selecaoItemRepository
+                .findBySelecaoId(galeria.getSelecaoEntregueId());
+        if (itens.isEmpty()) {
+            return;
+        }
+        Set<String> disponiveis = new HashSet<>();
+        List<String> ids = itens.stream().map(SelecaoItem::getMidiaId).toList();
+        for (MidiaGaleria midia : midiaRepository
+                .findByGaleriaIdAndIdInAndStatus(galeria.getId(), ids, MidiaStatus.DISPONIVEL)) {
+            disponiveis.add(midia.getId());
+        }
+
+        Set<String> fotosEntregues = new HashSet<>();
+        Set<String> videosEntregues = new HashSet<>();
+        for (SelecaoItem item : itens) {
+            if (!disponiveis.contains(item.getMidiaId())) {
+                continue;
+            }
+            if (MidiaTipo.FOTO.name().equals(item.getTipo())) {
+                fotosEntregues.add(item.getMidiaId());
+            } else if (MidiaTipo.VIDEO.name().equals(item.getTipo())) {
+                videosEntregues.add(item.getMidiaId());
+            }
+        }
+        if (!fotos.containsAll(fotosEntregues) || !videos.containsAll(videosEntregues)) {
+            throw new RegraDeNegocioException("MIDIA_ENTREGUE_NAO_PODE_SER_REMOVIDA",
+                    "As fotos e videos ja entregues continuam obrigatorios na selecao. "
+                            + "Para substituir uma midia entregue, fale com o estudio.");
+        }
+    }
+
     private GaleriaDtos.SelecaoResponse selecaoResponse(SelecaoGaleria selecao) {
         List<SelecaoItem> itens = selecaoItemRepository.findBySelecaoId(selecao.getId());
         List<String> fotoIds = itens.stream()
@@ -1419,16 +1539,61 @@ public class GaleriaService implements GaleriaConsulta {
         if (agendamentoIds == null || agendamentoIds.isEmpty()) {
             return Map.of();
         }
+        List<Galeria> galerias = galeriaRepository.findByAgendamentoIdIn(agendamentoIds);
+        Map<String, List<PedidoExtras>> porGaleria = extrasRepository
+                .findByGaleriaIdInOrderByAuditoriaCriadoEmAsc(
+                        galerias.stream().map(Galeria::getId).toList())
+                .stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        PedidoExtras::getGaleriaId,
+                        LinkedHashMap::new,
+                        java.util.stream.Collectors.toList()));
         Map<String, ResumoExtras> resumos = new LinkedHashMap<>();
-        for (Galeria galeria : galeriaRepository.findByAgendamentoIdIn(agendamentoIds)) {
-            extrasRepository.findFirstByGaleriaIdOrderByAuditoriaCriadoEmDesc(galeria.getId())
-                    .ifPresent(pedido -> resumos.put(galeria.getAgendamentoId(),
-                            new ResumoExtras(
-                                    galeria.getId(),
-                                    pedido.getId(),
-                                    pedido.getQuantidadeFotos(),
-                                    pedido.getValorTotal(),
-                                    statusExtras(pedido.getStatus()))));
+        for (Galeria galeria : galerias) {
+            List<PedidoExtras> pedidos = porGaleria.getOrDefault(galeria.getId(), List.of());
+            if (pedidos.isEmpty()) {
+                continue;
+            }
+            int quantidadeCoberta = 0;
+            int quantidadePendente = 0;
+            BigDecimal valorPago = BigDecimal.ZERO;
+            BigDecimal valorPendente = BigDecimal.ZERO;
+            boolean temPago = false;
+            boolean temIsento = false;
+            for (PedidoExtras pedido : pedidos) {
+                switch (pedido.getStatus()) {
+                    case PAGO -> {
+                        quantidadeCoberta += pedido.getQuantidadeFotos();
+                        valorPago = valorPago.add(pedido.getValorTotal());
+                        temPago = true;
+                    }
+                    case ISENTO -> {
+                        quantidadeCoberta += pedido.getQuantidadeFotos();
+                        temIsento = true;
+                    }
+                    case PENDENTE -> {
+                        quantidadePendente += pedido.getQuantidadeFotos();
+                        valorPendente = valorPendente.add(pedido.getValorTotal());
+                    }
+                    default -> {
+                        // Pedidos cancelados nao entram em nenhum total.
+                    }
+                }
+            }
+            StatusExtras status = quantidadePendente > 0
+                    ? StatusExtras.PENDENTE
+                    : temPago ? StatusExtras.PAGO
+                    : temIsento ? StatusExtras.ISENTO
+                    : StatusExtras.CANCELADO;
+            PedidoExtras ultimo = pedidos.get(pedidos.size() - 1);
+            resumos.put(galeria.getAgendamentoId(), new ResumoExtras(
+                    galeria.getId(),
+                    ultimo.getId(),
+                    quantidadeCoberta + quantidadePendente,
+                    valorPago.add(valorPendente),
+                    valorPago,
+                    valorPendente,
+                    status));
         }
         return resumos;
     }
@@ -1443,15 +1608,6 @@ public class GaleriaService implements GaleriaConsulta {
                 galeriaRepository.countByStatus(GaleriaStatus.EM_EDICAO),
                 galeriaRepository.countByStatus(GaleriaStatus.ENTREGUE),
                 extrasRepository.countByStatus(PedidoExtrasStatus.PENDENTE));
-    }
-
-    private static StatusExtras statusExtras(PedidoExtrasStatus status) {
-        return switch (status) {
-            case PENDENTE -> StatusExtras.PENDENTE;
-            case PAGO -> StatusExtras.PAGO;
-            case ISENTO -> StatusExtras.ISENTO;
-            case CANCELADO -> StatusExtras.CANCELADO;
-        };
     }
 
     private Galeria obter(String id) {

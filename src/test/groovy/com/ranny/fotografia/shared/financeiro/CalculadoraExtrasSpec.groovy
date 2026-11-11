@@ -72,4 +72,67 @@ class CalculadoraExtrasSpec extends Specification {
         resultado.valorMedioUnitario == 0.00
         resultado.detalhamento.isEmpty()
     }
+
+    def "delta sem cobertura equivale ao calculo total"() {
+        given:
+        def faixas = [new FaixaFotoExtraSnapshot(11, new BigDecimal("10.00"))]
+
+        when:
+        def delta = CalculadoraExtras.calcularDelta(
+                new BigDecimal("15.00"), faixas, 12, 0)
+
+        then:
+        delta.quantidade == 12
+        delta.valorTotal == 170.00
+        delta.detalhamento*.quantidade == [10, 2]
+    }
+
+    def "delta cobra apenas as fotos marginais dentro da mesma faixa"() {
+        when:
+        def delta = CalculadoraExtras.calcularDelta(
+                new BigDecimal("50.00"), List.of(), 4, 2)
+
+        then:
+        delta.quantidade == 2
+        delta.valorTotal == 100.00
+        delta.detalhamento.size() == 1
+        delta.detalhamento[0] == new FaixaAplicada(
+                2, new BigDecimal("50.00"), new BigDecimal("100.00"))
+    }
+
+    def "delta atravessa faixa progressiva"() {
+        given:
+        def faixas = [
+                new FaixaFotoExtraSnapshot(2, new BigDecimal("30.00")),
+                new FaixaFotoExtraSnapshot(4, new BigDecimal("20.00"))
+        ]
+
+        when:
+        def delta = CalculadoraExtras.calcularDelta(
+                new BigDecimal("50.00"), faixas, 4, 1)
+
+        then:
+        delta.quantidade == 3
+        delta.valorTotal == 80.00
+        delta.detalhamento*.quantidade == [2, 1]
+        delta.detalhamento*.valorUnitario == [
+                new BigDecimal("30.00"),
+                new BigDecimal("20.00")
+        ]
+        delta.detalhamento*.subtotal == [
+                new BigDecimal("60.00"),
+                new BigDecimal("20.00")
+        ]
+    }
+
+    def "delta zero nao gera cobranca"() {
+        when:
+        def delta = CalculadoraExtras.calcularDelta(
+                new BigDecimal("50.00"), List.of(), 3, 3)
+
+        then:
+        delta.quantidade == 0
+        delta.valorTotal == 0.00
+        delta.detalhamento.isEmpty()
+    }
 }

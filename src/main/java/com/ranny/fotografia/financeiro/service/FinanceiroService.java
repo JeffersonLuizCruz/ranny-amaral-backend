@@ -105,7 +105,7 @@ public class FinanceiroService implements FinanceiroConsulta {
                 FinanceiroDtos.EntradaResponse::recebidoExtras);
         BigDecimal totalExtrasPendentes = entradas.stream()
                 .filter(entrada -> "pendente".equals(entrada.statusExtras()))
-                .map(FinanceiroDtos.EntradaResponse::valorExtras)
+                .map(entrada -> entrada.valorExtras().subtract(entrada.recebidoExtras()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         int quantidade = entradas.size();
@@ -196,8 +196,8 @@ public class FinanceiroService implements FinanceiroConsulta {
                 ? valorEntrada : BigDecimal.ZERO;
         BigDecimal recebidoFinal = statusFinal == PagamentoStatus.CONFIRMADO
                 ? saldo : BigDecimal.ZERO;
-        BigDecimal recebidoExtras = extras != null && extras.status() == StatusExtras.PAGO
-                ? valorExtras : BigDecimal.ZERO;
+        BigDecimal recebidoExtras = extras == null
+                ? BigDecimal.ZERO : nuloParaZero(extras.valorPago());
         BigDecimal recebido = recebidoEntrada.add(recebidoFinal).add(recebidoExtras);
         BigDecimal aReceber = valorTotal.add(valorExtras).subtract(recebido).max(BigDecimal.ZERO);
 

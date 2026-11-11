@@ -29,6 +29,8 @@ public interface GaleriaConsulta {
             String pedidoId,
             int quantidadeFotos,
             BigDecimal valorTotal,
+            BigDecimal valorPago,
+            BigDecimal valorPendente,
             StatusExtras status
     ) {
     }

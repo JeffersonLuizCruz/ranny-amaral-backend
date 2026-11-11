@@ -247,6 +247,17 @@ public final class GaleriaDtos {
         }
     }
 
+    /** Resumo agregado de todos os pedidos de extras de uma galeria. */
+    public record ResumoExtrasResponse(
+            int quantidadeTotal,
+            BigDecimal valorTotal,
+            int quantidadeCoberta,
+            BigDecimal valorCoberto,
+            int quantidadePendente,
+            BigDecimal valorPendente
+    ) {
+    }
+
     public record EventoResponse(String id, String tipo, String detalhe, Instant em) {
         public static EventoResponse de(EventoGaleria evento) {
             return new EventoResponse(
@@ -262,6 +273,8 @@ public final class GaleriaDtos {
             List<LinkResponse> links,
             SelecaoResponse selecao,
             PedidoExtrasResponse extras,
+            List<PedidoExtrasResponse> pedidosExtras,
+            ResumoExtrasResponse resumoExtras,
             List<EventoResponse> historico
     ) {
     }
@@ -272,6 +285,8 @@ public final class GaleriaDtos {
             List<MidiaResponse> midias,
             SelecaoResponse selecao,
             PedidoExtrasResponse extras,
+            ResumoExtrasResponse resumoExtras,
+            List<String> midiasEntregues,
             boolean entregaDisponivel
     ) {
     }

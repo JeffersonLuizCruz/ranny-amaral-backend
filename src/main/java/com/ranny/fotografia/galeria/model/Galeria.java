@@ -81,6 +81,9 @@ public class Galeria {
     @Column(name = "pedido_extras_id", length = 64)
     private String pedidoExtrasId;
 
+    @Column(name = "selecao_entregue_id", length = 64)
+    private String selecaoEntregueId;
+
     @Column(name = "raw_liberado", nullable = false)
     private boolean rawLiberado;
 
@@ -148,6 +151,17 @@ public class Galeria {
         this.status = GaleriaStatus.EM_SELECAO;
         this.selecaoAtualId = null;
         this.pedidoExtrasId = null;
+        this.auditoria.marcarAtualizacao();
+    }
+
+    /**
+     * Guarda a selecao que foi efetivamente entregue ao cliente.
+     *
+     * <p>O conjunto permanece travado em reaberturas futuras para impedir que o
+     * cliente troque fotos ja baixadas por outras sem pagar o adicional.
+     */
+    public void registrarSelecaoEntregue(String selecaoId) {
+        this.selecaoEntregueId = selecaoId;
         this.auditoria.marcarAtualizacao();
     }
 

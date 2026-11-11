@@ -6,7 +6,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Calculo progressivo das fotos extras.
@@ -88,5 +90,61 @@ public final class CalculadoraExtras {
 
     private static BigDecimal zero() {
         return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Calcula apenas o custo marginal das fotos que ainda nao foram cobertas.
+     *
+     * <p>PATTERN: Progressive Pricing + Delta. A quantidade coberta representa
+     * fotos ja pagas ou isentas; o detalhamento devolvido cobre somente as
+     * posicoes {@code quantidadeCoberta + 1} ate {@code quantidadeTotal}.
+     */
+    public static ResultadoDeltaExtras calcularDelta(BigDecimal valorBase,
+                                                     List<FaixaFotoExtraSnapshot> faixas,
+                                                     int quantidadeTotal,
+                                                     int quantidadeCoberta) {
+        if (quantidadeTotal < 0 || quantidadeCoberta < 0
+                || quantidadeCoberta > quantidadeTotal) {
+            throw new IllegalArgumentException("Quantidade coberta invalida.");
+        }
+
+        ResultadoExtras total = calcular(valorBase, faixas, quantidadeTotal);
+        if (quantidadeCoberta == 0) {
+            return new ResultadoDeltaExtras(
+                    quantidadeTotal, total.valorTotal(), total.detalhamento());
+        }
+
+        ResultadoExtras coberto = calcular(valorBase, faixas, quantidadeCoberta);
+        BigDecimal valorDelta = total.valorTotal().subtract(coberto.valorTotal());
+        return new ResultadoDeltaExtras(
+                quantidadeTotal - quantidadeCoberta,
+                valorDelta.setScale(2, RoundingMode.HALF_UP),
+                subtrair(total.detalhamento(), coberto.detalhamento()));
+    }
+
+    private static List<FaixaAplicada> subtrair(List<FaixaAplicada> total,
+                                                List<FaixaAplicada> coberto) {
+        Map<BigDecimal, Integer> restante = new LinkedHashMap<>();
+        for (FaixaAplicada faixa : total) {
+            BigDecimal chave = faixa.valorUnitario().setScale(2, RoundingMode.HALF_UP);
+            restante.merge(chave, faixa.quantidade(), Integer::sum);
+        }
+        for (FaixaAplicada faixa : coberto) {
+            BigDecimal chave = faixa.valorUnitario().setScale(2, RoundingMode.HALF_UP);
+            restante.computeIfPresent(chave,
+                    (ignorado, quantidade) -> quantidade - faixa.quantidade());
+        }
+
+        List<FaixaAplicada> delta = new ArrayList<>();
+        for (Map.Entry<BigDecimal, Integer> entry : restante.entrySet()) {
+            if (entry.getValue() <= 0) {
+                continue;
+            }
+            BigDecimal subtotal = entry.getKey()
+                    .multiply(BigDecimal.valueOf(entry.getValue()))
+                    .setScale(2, RoundingMode.HALF_UP);
+            delta.add(new FaixaAplicada(entry.getValue(), entry.getKey(), subtotal));
+        }
+        return delta;
     }
 }

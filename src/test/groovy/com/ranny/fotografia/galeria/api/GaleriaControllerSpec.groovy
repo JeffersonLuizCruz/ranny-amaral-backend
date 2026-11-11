@@ -850,6 +850,134 @@ class GaleriaControllerSpec extends Specification {
         JsonCorpo.mapa(resultado).codigo == "COMPROVANTE_OBRIGATORIO"
     }
 
+    def "reabre com extras pagos e cobra apenas o delta"() {
+        given:
+        def preparado = prepararGaleriaComSelecao(
+                "Cliente Extras Adicionais", true, false, true)
+        pagarExtrasPendentes(preparado)
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/selecao/reabrir"))
+                .andExpect(status().isOk())
+        def novoExtra = enviarFoto(preparado.galeriaId, "extra-novo.jpg",
+                imagemJpeg(120, 100, Color.MAGENTA))
+
+        when:
+        mockMvc.perform(post("/api/v1/public/galerias/${preparado.linkToken}/selecao")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        fotoIds : [preparado.midiaId, preparado.extraMidiaId, novoExtra],
+                        videoIds: []])))
+                .andExpect(status().isOk())
+        def detalhe = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def financeiro = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/financeiro/mensal").param("mes", preparado.mes))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        detalhe.galeria.status == "selecao_enviada"
+        detalhe.pedidosExtras.size() == 2
+        detalhe.pedidosExtras[0].status == "pago"
+        detalhe.pedidosExtras[0].quantidadeFotos == 1
+        detalhe.pedidosExtras[1].status == "pendente"
+        detalhe.pedidosExtras[1].quantidadeFotos == 1
+        detalhe.pedidosExtras[1].valorTotal == 50.0d
+        detalhe.resumoExtras.quantidadeCoberta == 1
+        detalhe.resumoExtras.valorCoberto == 50.0d
+        detalhe.resumoExtras.quantidadePendente == 1
+        detalhe.resumoExtras.valorPendente == 50.0d
+        financeiro.totalExtras == 100.0d
+        financeiro.totalExtrasRecebidos == 50.0d
+        financeiro.totalExtrasPendentes == 50.0d
+    }
+
+    def "reabre selecao sem extras em edicao e permite comprar extras"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente So Inclusas")
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/selecao/reabrir"))
+                .andExpect(status().isOk())
+        def novoExtra = enviarFoto(preparado.galeriaId, "extra-comprado.jpg",
+                imagemJpeg(110, 100, Color.ORANGE))
+
+        when:
+        mockMvc.perform(post("/api/v1/public/galerias/${preparado.linkToken}/selecao")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        fotoIds : [preparado.midiaId, novoExtra],
+                        videoIds: []])))
+                .andExpect(status().isOk())
+        def detalhe = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        detalhe.galeria.status == "selecao_enviada"
+        detalhe.pedidosExtras.size() == 1
+        detalhe.pedidosExtras[0].status == "pendente"
+        detalhe.pedidosExtras[0].quantidadeFotos == 1
+        detalhe.pedidosExtras[0].valorTotal == 50.0d
+    }
+
+    def "nao permite remover midia ja entregue ao reabrir"() {
+        given:
+        def preparado = prepararGaleriaComSelecao(
+                "Cliente Midia Entregue", true, false, true)
+        pagarExtrasPendentes(preparado)
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/liberar-raw"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/revogar"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/selecao/reabrir"))
+                .andExpect(status().isOk())
+
+        when:
+        def resultado = mockMvc.perform(
+                post("/api/v1/public/galerias/${preparado.linkToken}/selecao")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                fotoIds : [preparado.midiaId],
+                                videoIds: []])))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "MIDIA_ENTREGUE_NAO_PODE_SER_REMOVIDA"
+    }
+
+    private void pagarExtrasPendentes(Map preparado) {
+        Cenario.estudioComExtras(estudioRepository)
+        def comprovante = "%PDF-1.7\ncomprovante extras".getBytes("US-ASCII")
+        storage.simular(comprovante.length, "application/pdf", comprovante)
+        def sessao = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/public/galerias/${preparado.linkToken}/extras/comprovante/upload")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                nomeArquivo   : "comprovante.pdf",
+                                mimeType      : "application/pdf",
+                                tamanho       : comprovante.length,
+                                checksumSha256: sha256(comprovante)
+                        ])))
+                .andExpect(status().isOk())
+                .andReturn())
+        mockMvc.perform(
+                post("/api/v1/public/galerias/${preparado.linkToken}/extras/comprovante/upload/${sessao.arquivoId}/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([partes: []])))
+                .andExpect(status().isOk())
+        mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/extras/confirmar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                formaPagamento: "pix",
+                                confirmadoPor : "Teste"])))
+                .andExpect(status().isOk())
+    }
+
     private Map prepararGaleriaComSelecao(String nomeCliente, boolean comExtra = false,
                                           boolean comVideo = false,
                                           boolean selecionarExtra = false,
