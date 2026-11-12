@@ -42,6 +42,15 @@ public interface ObjectStorage {
 
     void remover(String objectKey);
 
+    /** Lista objetos por prefixo, usado na reconciliacao e no expurgo por galeria. */
+    List<ObjetoArmazenado> listar(String prefixo);
+
+    /** Remove varios objetos em lote. Devolve quantos foram enviados para remocao. */
+    int removerLote(List<String> objectKeys);
+
+    record ObjetoArmazenado(String objectKey, long tamanhoBytes) {
+    }
+
     record ObjectMetadata(long tamanhoBytes, String mimeType, String etag) {
     }
 }

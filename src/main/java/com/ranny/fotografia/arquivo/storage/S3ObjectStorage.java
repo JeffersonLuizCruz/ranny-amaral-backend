@@ -14,13 +14,21 @@ import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
+import software.amazon.awssdk.services.s3.paginators.ListObjectsV2Iterable;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
@@ -257,6 +265,55 @@ public class S3ObjectStorage implements ObjectStorage {
                     .build());
         } catch (SdkException ex) {
             throw new ArmazenamentoException("Falha ao remover objeto do storage.", ex);
+        }
+    }
+
+    @Override
+    public List<ObjetoArmazenado> listar(String prefixo) {
+        List<ObjetoArmazenado> objetos = new ArrayList<>();
+        try {
+            ListObjectsV2Iterable paginas = s3.listObjectsV2Paginator(
+                    ListObjectsV2Request.builder()
+                            .bucket(properties.getBucket())
+                            .prefix(prefixo)
+                            .build());
+            for (ListObjectsV2Response pagina : paginas) {
+                for (S3Object objeto : pagina.contents()) {
+                    objetos.add(new ObjetoArmazenado(objeto.key(), objeto.size()));
+                }
+            }
+            return objetos;
+        } catch (SdkException ex) {
+            throw new ArmazenamentoException("Falha ao listar objetos do storage.", ex);
+        }
+    }
+
+    @Override
+    public int removerLote(List<String> objectKeys) {
+        if (objectKeys == null || objectKeys.isEmpty()) {
+            return 0;
+        }
+        int removidos = 0;
+        try {
+            for (int inicio = 0; inicio < objectKeys.size(); inicio += 1000) {
+                List<ObjectIdentifier> lote = objectKeys
+                        .subList(inicio, Math.min(inicio + 1000, objectKeys.size()))
+                        .stream()
+                        .map(chave -> ObjectIdentifier.builder().key(chave).build())
+                        .toList();
+                DeleteObjectsResponse resposta = s3.deleteObjects(DeleteObjectsRequest.builder()
+                        .bucket(properties.getBucket())
+                        .delete(Delete.builder().objects(lote).build())
+                        .build());
+                if (resposta.hasErrors() && !resposta.errors().isEmpty()) {
+                    throw new ArmazenamentoException("Falha ao remover parte dos objetos: "
+                            + resposta.errors().getFirst().message());
+                }
+                removidos += lote.size();
+            }
+            return removidos;
+        } catch (SdkException ex) {
+            throw new ArmazenamentoException("Falha ao remover objetos em lote.", ex);
         }
     }
 

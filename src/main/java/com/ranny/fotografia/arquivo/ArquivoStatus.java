@@ -7,5 +7,7 @@ public enum ArquivoStatus {
     PROCESSANDO,
     DISPONIVEL,
     FALHA,
-    CANCELADO
+    CANCELADO,
+    /** Binario removido do storage pelo expurgo; linha e metadados preservados. */
+    EXPURGADO
 }

@@ -142,6 +142,19 @@ public class Arquivo {
         this.auditoria.marcarAtualizacao();
     }
 
+    /**
+     * Marca o binario como removido do storage.
+     *
+     * <p>A linha e mantida para preservar historico, financeiro e a ligacao com
+     * midias e comprovantes; apenas o conteudo deixa de existir.
+     */
+    public void expurgar() {
+        this.status = ArquivoStatus.EXPURGADO;
+        this.uploadId = null;
+        this.expiraEm = null;
+        this.auditoria.marcarAtualizacao();
+    }
+
     public boolean estaDisponivel() {
         return status == ArquivoStatus.DISPONIVEL;
     }

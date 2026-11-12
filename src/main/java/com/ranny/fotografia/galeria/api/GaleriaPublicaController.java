@@ -1,5 +1,6 @@
 package com.ranny.fotografia.galeria.api;
 
+import com.ranny.fotografia.galeria.service.ExpurgoGaleriaService;
 import com.ranny.fotografia.galeria.service.GaleriaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,9 +26,12 @@ import java.io.IOException;
 public class GaleriaPublicaController {
 
     private final GaleriaService galeriaService;
+    private final ExpurgoGaleriaService expurgoService;
 
-    public GaleriaPublicaController(GaleriaService galeriaService) {
+    public GaleriaPublicaController(GaleriaService galeriaService,
+                                    ExpurgoGaleriaService expurgoService) {
         this.galeriaService = galeriaService;
+        this.expurgoService = expurgoService;
     }
 
     @GetMapping("/{token}")
@@ -101,6 +105,8 @@ public class GaleriaPublicaController {
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
                 "attachment; filename=\"galeria.zip\"");
         galeriaService.escreverZip(token, versao, response.getOutputStream());
+        // So chega aqui se o stream fechou sem excecao: download completo.
+        expurgoService.registrarZipConcluido(token);
     }
 
     @GetMapping("/downloads/{token}/selecao.zip")

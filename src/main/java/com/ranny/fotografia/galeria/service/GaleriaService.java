@@ -448,7 +448,8 @@ public class GaleriaService implements GaleriaConsulta {
         if (galeria.getStatus() == GaleriaStatus.SELECAO_ENVIADA
                 || galeria.getStatus() == GaleriaStatus.EM_EDICAO
                 || galeria.getStatus() == GaleriaStatus.ENTREGUE
-                || galeria.getStatus() == GaleriaStatus.CANCELADA) {
+                || galeria.getStatus() == GaleriaStatus.CANCELADA
+                || galeria.getStatus() == GaleriaStatus.EXPURGADA) {
             throw new RegraDeNegocioException("SELECAO_NAO_PUBLICAVEL",
                     "A selecao so pode ser publicada antes do envio ou para renovar o link em selecao.");
         }
@@ -1895,6 +1896,97 @@ public class GaleriaService implements GaleriaConsulta {
                 galeriaRepository.countByStatus(GaleriaStatus.EM_EDICAO),
                 galeriaRepository.countByStatus(GaleriaStatus.ENTREGUE),
                 extrasRepository.countByStatus(PedidoExtrasStatus.PENDENTE));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ResumoArmazenamento> galeriasParaArmazenamento() {
+        List<Galeria> galerias = galeriaRepository.findAll();
+        if (galerias.isEmpty()) {
+            return List.of();
+        }
+        List<String> ids = galerias.stream().map(Galeria::getId).toList();
+        Set<String> comExtrasPendentes = new HashSet<>();
+        for (PedidoExtras pedido : extrasRepository.findByGaleriaIdInOrderByAuditoriaCriadoEmAsc(ids)) {
+            if (pedido.getStatus() == PedidoExtrasStatus.PENDENTE) {
+                comExtrasPendentes.add(pedido.getGaleriaId());
+            }
+        }
+        Map<String, Instant> entregues = new LinkedHashMap<>();
+        for (EventoGaleria evento : eventoRepository
+                .findByGaleriaIdInAndTipoOrderByCriadoEmAsc(ids, EventoGaleriaTipo.ENTREGA_PUBLICADA)) {
+            entregues.putIfAbsent(evento.getGaleriaId(), evento.getCriadoEm());
+        }
+
+        List<ResumoArmazenamento> resumos = new ArrayList<>(galerias.size());
+        for (Galeria galeria : galerias) {
+            String bloqueio = motivoBloqueioExpurgo(galeria, comExtrasPendentes.contains(galeria.getId()));
+            resumos.add(new ResumoArmazenamento(
+                    galeria.getId(),
+                    galeria.getClienteNome(),
+                    galeria.getStatus().valor(),
+                    entregues.get(galeria.getId()),
+                    galeria.getZipBaixadoEm(),
+                    galeria.getZipConcluidoEm(),
+                    galeria.getExpurgoStatus().valor(),
+                    galeria.getExpurgoEfetivadoEm(),
+                    galeria.getBytesExpurgados(),
+                    bloqueio == null,
+                    bloqueio));
+        }
+        return resumos;
+    }
+
+    /** Resumo de armazenamento de uma galeria, com a elegibilidade do expurgo. */
+    @Transactional(readOnly = true)
+    public ResumoArmazenamento resumoArmazenamento(String galeriaId) {
+        Galeria galeria = obter(galeriaId);
+        boolean extrasPendentes = extrasRepository.existsByGaleriaIdAndStatus(
+                galeriaId, PedidoExtrasStatus.PENDENTE);
+        Instant entregueEm = eventoRepository
+                .findByGaleriaIdInAndTipoOrderByCriadoEmAsc(
+                        List.of(galeriaId), EventoGaleriaTipo.ENTREGA_PUBLICADA)
+                .stream()
+                .findFirst()
+                .map(EventoGaleria::getCriadoEm)
+                .orElse(null);
+        String bloqueio = motivoBloqueioExpurgo(galeria, extrasPendentes);
+        return new ResumoArmazenamento(
+                galeria.getId(),
+                galeria.getClienteNome(),
+                galeria.getStatus().valor(),
+                entregueEm,
+                galeria.getZipBaixadoEm(),
+                galeria.getZipConcluidoEm(),
+                galeria.getExpurgoStatus().valor(),
+                galeria.getExpurgoEfetivadoEm(),
+                galeria.getBytesExpurgados(),
+                bloqueio == null,
+                bloqueio);
+    }
+
+    /**
+     * Regras de elegibilidade do expurgo.
+     *
+     * <p>O cliente precisa ter concluido o ZIP: o registro de "baixado" acontece
+     * antes do streaming e um download interrompido nao pode liberar a remocao.
+     */
+    private String motivoBloqueioExpurgo(Galeria galeria, boolean extrasPendentes) {        if (galeria.getStatus() == GaleriaStatus.EXPURGADA) {
+            return "Galeria ja expurgada.";
+        }
+        if (galeria.getStatus() != GaleriaStatus.ENTREGUE) {
+            return "A entrega ainda nao foi finalizada.";
+        }
+        if (galeria.expurgoEmAndamento()) {
+            return "Ja existe um expurgo em andamento.";
+        }
+        if (extrasPendentes) {
+            return "Existe pedido de extras pendente.";
+        }
+        if (galeria.getZipConcluidoEm() == null) {
+            return "O cliente ainda nao concluiu o download do ZIP.";
+        }
+        return null;
     }
 
     private Galeria obter(String id) {

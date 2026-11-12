@@ -9,7 +9,9 @@ public enum GaleriaStatus {
     SELECAO_ENVIADA,
     EM_EDICAO,
     ENTREGUE,
-    CANCELADA;
+    CANCELADA,
+    /** Galeria com binarios expurgados; estado terminal. */
+    EXPURGADA;
 
     public String valor() {
         return name().toLowerCase(Locale.ROOT);

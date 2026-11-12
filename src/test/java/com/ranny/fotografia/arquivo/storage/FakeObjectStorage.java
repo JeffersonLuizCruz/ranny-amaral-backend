@@ -120,4 +120,21 @@ public class FakeObjectStorage implements ObjectStorage {
     public void remover(String objectKey) {
         objetos.remove(objectKey);
     }
+
+    @Override
+    public List<ObjetoArmazenado> listar(String prefixo) {
+        return objetos.entrySet().stream()
+                .filter(entrada -> prefixo == null || entrada.getKey().startsWith(prefixo))
+                .map(entrada -> new ObjetoArmazenado(entrada.getKey(), entrada.getValue().length))
+                .toList();
+    }
+
+    @Override
+    public int removerLote(List<String> objectKeys) {
+        if (objectKeys == null) {
+            return 0;
+        }
+        objectKeys.forEach(objetos::remove);
+        return objectKeys.size();
+    }
 }

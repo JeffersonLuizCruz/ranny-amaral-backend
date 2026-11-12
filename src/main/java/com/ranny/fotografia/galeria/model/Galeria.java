@@ -96,6 +96,29 @@ public class Galeria {
     @Column(name = "zip_baixado_em")
     private Instant zipBaixadoEm;
 
+    /** Gravado apenas quando o ZIP termina de ser escrito com sucesso. */
+    @Column(name = "zip_concluido_em")
+    private Instant zipConcluidoEm;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "expurgo_status", nullable = false, length = 20)
+    private ExpurgoStatus expurgoStatus = ExpurgoStatus.NENHUM;
+
+    @Column(name = "expurgo_solicitado_em")
+    private Instant expurgoSolicitadoEm;
+
+    @Column(name = "expurgo_solicitado_por", length = 120)
+    private String expurgoSolicitadoPor;
+
+    @Column(name = "expurgo_motivo", length = 500)
+    private String expurgoMotivo;
+
+    @Column(name = "expurgo_efetivado_em")
+    private Instant expurgoEfetivadoEm;
+
+    @Column(name = "bytes_expurgados", nullable = false)
+    private long bytesExpurgados;
+
     @Embedded
     private Auditoria auditoria;
 
@@ -123,6 +146,7 @@ public class Galeria {
         galeria.valorFotoExtra = valorFotoExtra == null ? BigDecimal.ZERO : valorFotoExtra;
         galeria.faixasFotoExtra = faixasFotoExtra == null
                 ? List.of() : List.copyOf(faixasFotoExtra);
+        galeria.expurgoStatus = ExpurgoStatus.NENHUM;
         galeria.auditoria = Auditoria.iniciar();
         return galeria;
     }
@@ -133,8 +157,8 @@ public class Galeria {
     }
 
     public void publicarSelecao() {
-        if (status == GaleriaStatus.CANCELADA) {
-            throw new IllegalStateException("Galeria cancelada nao pode ser publicada.");
+        if (status == GaleriaStatus.CANCELADA || status == GaleriaStatus.EXPURGADA) {
+            throw new IllegalStateException("Galeria encerrada nao pode ser publicada.");
         }
         this.status = GaleriaStatus.EM_SELECAO;
         this.auditoria.marcarAtualizacao();
@@ -148,6 +172,7 @@ public class Galeria {
     }
 
     public void reabrirSelecao() {
+        exigirNaoExpurgada();
         this.status = GaleriaStatus.EM_SELECAO;
         this.selecaoAtualId = null;
         this.pedidoExtrasId = null;
@@ -171,6 +196,7 @@ public class Galeria {
     }
 
     public void publicarEntrega() {
+        exigirNaoExpurgada();
         this.status = GaleriaStatus.ENTREGUE;
         this.auditoria.marcarAtualizacao();
     }
@@ -214,6 +240,62 @@ public class Galeria {
         }
     }
 
+    /**
+     * Registra que o ZIP terminou de ser entregue ao cliente.
+     *
+     * <p>Diferente de {@link #registrarZipBaixado()}, so e chamado depois que o
+     * stream fecha com sucesso; um download interrompido nao libera o expurgo.
+     */
+    public void registrarZipConcluido() {
+        if (this.zipConcluidoEm == null) {
+            this.zipConcluidoEm = Instant.now();
+            this.auditoria.marcarAtualizacao();
+        }
+    }
+
+    public void solicitarExpurgo(String por, String motivo) {
+        if (status == GaleriaStatus.EXPURGADA
+                || expurgoStatus == ExpurgoStatus.EXECUTANDO
+                || expurgoStatus == ExpurgoStatus.EXECUTADO) {
+            throw new IllegalStateException("Galeria nao pode ser expurgada novamente.");
+        }
+        this.expurgoStatus = ExpurgoStatus.AGENDADO;
+        this.expurgoSolicitadoEm = Instant.now();
+        this.expurgoSolicitadoPor = por == null || por.isBlank()
+                ? "Equipe do estudio" : por;
+        this.expurgoMotivo = motivo;
+        this.auditoria.marcarAtualizacao();
+    }
+
+    public void iniciarExpurgo() {
+        this.expurgoStatus = ExpurgoStatus.EXECUTANDO;
+        this.auditoria.marcarAtualizacao();
+    }
+
+    public void concluirExpurgo(long bytesLiberados) {
+        this.status = GaleriaStatus.EXPURGADA;
+        this.expurgoStatus = ExpurgoStatus.EXECUTADO;
+        this.expurgoEfetivadoEm = Instant.now();
+        this.bytesExpurgados = Math.max(0, bytesLiberados);
+        this.auditoria.marcarAtualizacao();
+    }
+
+    public void cancelarExpurgo() {
+        if (expurgoStatus == ExpurgoStatus.AGENDADO) {
+            this.expurgoStatus = ExpurgoStatus.CANCELADO;
+            this.auditoria.marcarAtualizacao();
+        }
+    }
+
+    public boolean estaExpurgada() {
+        return status == GaleriaStatus.EXPURGADA;
+    }
+
+    public boolean expurgoEmAndamento() {
+        return expurgoStatus == ExpurgoStatus.AGENDADO
+                || expurgoStatus == ExpurgoStatus.EXECUTANDO;
+    }
+
     public void cancelar() {
         this.status = GaleriaStatus.CANCELADA;
         this.auditoria.marcarAtualizacao();
@@ -221,5 +303,11 @@ public class Galeria {
 
     public boolean aceitaNovasMidias() {
         return status == GaleriaStatus.AGUARDANDO_UPLOAD || status == GaleriaStatus.EM_SELECAO;
+    }
+
+    private void exigirNaoExpurgada() {
+        if (status == GaleriaStatus.EXPURGADA) {
+            throw new IllegalStateException("Galeria expurgada nao aceita alteracoes.");
+        }
     }
 }

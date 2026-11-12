@@ -43,6 +43,11 @@ public final class GaleriaDtos {
             Instant rawLiberadoEm,
             String rawLiberadoPor,
             Instant zipBaixadoEm,
+            Instant zipConcluidoEm,
+            String expurgoStatus,
+            Instant expurgoSolicitadoEm,
+            Instant expurgoEfetivadoEm,
+            long bytesExpurgados,
             String capaUrl,
             Instant createdAt,
             Instant updatedAt
@@ -71,6 +76,11 @@ public final class GaleriaDtos {
                     galeria.getRawLiberadoEm(),
                     galeria.getRawLiberadoPor(),
                     zipBaixadoEm,
+                    galeria.getZipConcluidoEm(),
+                    galeria.getExpurgoStatus().valor(),
+                    galeria.getExpurgoSolicitadoEm(),
+                    galeria.getExpurgoEfetivadoEm(),
+                    galeria.getBytesExpurgados(),
                     capaUrl,
                     galeria.getAuditoria().getCriadoEm(),
                     galeria.getAuditoria().getAtualizadoEm());
