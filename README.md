@@ -119,6 +119,8 @@ com.ranny.fotografia
 - `src/main/resources/db/migration/V13__zip_baixado_galeria.sql` adiciona `zip_baixado_em` na galeria, com backfill dos ZIPs antigos a partir do histórico.
 - `src/main/resources/db/migration/V14__remove_pronta_entrega.sql` remove o estado `PRONTA_ENTREGA`, converte as galerias existentes e ajusta o check constraint.
 - `src/main/resources/db/migration/V15__extras_adicionais.sql` adiciona `selecao_entregue_id` na galeria (trava de mídias já entregues) e o índice de busca do pedido de extras pendente.
+- `src/main/resources/db/migration/V16__link_unico_galeria.sql` transforma o link de seleção em link único (`GALERIA`) e mantém `ENTREGA` apenas para compatibilidade.
+- `src/main/resources/db/migration/V17__liberacao_progressiva_midia.sql` adiciona `liberada_em`, `entregue_em` e `liberacao_automatica` por mídia, com índices para a liberação progressiva.
 - O Flyway é a fonte de verdade do schema; o Hibernate apenas valida (`ddl-auto=validate`).
 - **Nunca edite uma migração já aplicada.** Mudanças entram em `V15__...`, `V16__...`, etc.
 - `spring.flyway.baseline-on-migrate=true` protege bancos não vazios sem histórico; em banco novo, a V1 é aplicada normalmente.
@@ -238,9 +240,12 @@ bucket. O download do staff agora é protegido pelo JWT.
 - Cada foto e vídeo recebe um **número estável** (`ordem`) por tipo dentro da galeria. O grid público e o
   detalhe do staff exibem o mesmo número, da esquerda para a direita; remoções não reutilizam números e
   podem deixar lacunas.
-- Seleção pública por token de 30 dias; entrega por token de 90 dias.
-- O payload público só expõe a URL do original quando o RAW foi liberado; downloads individuais e ZIP
-  passam pelo endpoint que valida o gate e registra o evento.
+- **Link único do cliente:** o token de seleção vira o link `GALERIA` e continua válido na entrega. A publicação da seleção vale 30 dias; ao enviar a seleção, o link é estendido para 90 dias e renovado na finalização.
+- **Liberação progressiva:** cada mídia tem `liberada_em` (baixável) e `entregue_em` (trava em reaberturas). O cliente vê apenas “Disponível” e “Em liberação”; o backend resolve a melhor versão (editada, RAW ou vídeo).
+- **Auto-liberação controlada:** o upload da versão editada recebe `liberarAutomaticamente`. Quando ligado, a mídia pronta é liberada após a seleção e a quitação dos extras; quando desligado, o staff libera manualmente em lote.
+- Seleção pública por token de 30 dias; após o envio, o mesmo link é estendido para 90 dias.
+- O payload público do link único **não** expõe a URL do original; downloads individuais e ZIP passam pelo
+  endpoint que valida a liberação e registra o evento. Apenas links `ENTREGA` antigos ainda expõem RAW.
 - `GET /api/v1/public/galerias/{token}/download-zip/validar` valida o lote antes do streaming.
 - O staff baixa as fotos selecionadas para edição por
   `POST /api/v1/galerias/{id}/selecao/download`, que devolve uma URL temporária (10 min) para
@@ -253,9 +258,9 @@ bucket. O download do staff agora é protegido pelo JWT.
   anteriores são preservados e o reenvio gera um novo pedido apenas com o **delta** de fotos, calculado
   pelas faixas progressivas congeladas na galeria. A reabertura é sempre uma ação do staff; o cliente
   combina a compra diretamente com o estúdio.
-- **Mídias entregues:** ao publicar a entrega, a seleção é registrada em `selecao_entregue_id`. Em
-  reaberturas futuras, todas as fotos e vídeos dessa seleção continuam obrigatórios; o cliente só pode
-  acrescentar novas mídias. Isso impede trocar fotos já baixadas por outras sem pagar o adicional.
+- **Mídias entregues:** cada mídia liberada recebe `entregue_em`. Em reaberturas futuras, todas as mídias
+  já entregues continuam obrigatórias; o cliente só pode acrescentar novas. `selecao_entregue_id` continua
+  sendo gravado na finalização para compatibilidade com entregas antigas.
 - Regras:
   - ensaio realizado e pagamentos quitados para publicar a seleção;
   - fotos selecionadas ≥ fotos inclusas;
@@ -289,10 +294,10 @@ bucket. O download do staff agora é protegido pelo JWT.
 | Contratos | `GET/POST /api/v1/contratos`, `GET/PUT/DELETE /{id}`, `GET /{id}/pagamento/comprovante/url`, `POST /{id}/duplicar`, `GET/POST /{id}/links-aceite`, `POST /{id}/links-aceite/{linkId}/cancelar`, `POST /{id}/reabrir`, `POST /{id}/cancelar` |
 | Pagamentos do contrato | `POST /{id}/pagamento/confirmar`, `POST /{id}/pagamento/rejeitar`, `POST /{id}/pagamento/isentar`, `PUT /{id}/pagamento-final`, `POST /{id}/pagamento-final/isentar`, `POST /{id}/pagamento-final/reabrir` |
 | Upload de comprovante | `POST /api/v1/public/contratos/{token}/comprovante/upload`, `POST .../upload/{arquivoId}/complete`, `POST .../upload/{arquivoId}/abort`, `GET .../upload/{arquivoId}/status` |
-| Galerias | `GET/POST /api/v1/galerias`, `GET /{id}`, `GET /{id}/midias`, `POST /{id}/midias/upload`, `POST .../complete`, `DELETE /{id}/midias/{midiaId}` |
+| Galerias | `GET/POST /api/v1/galerias`, `GET /{id}`, `GET /{id}/midias`, `POST /{id}/midias/upload`, `POST .../complete`, `DELETE /{id}/midias/{midiaId}`, `POST /{id}/midias/{midiaId}/auto-liberacao` |
 | Seleção e extras | `POST /{id}/selecao/publicar`, `POST /{id}/selecao/reabrir`, `POST /{id}/selecao/download`, `POST /{id}/extras/confirmar`, `POST /{id}/extras/isentar`, `POST /{id}/edicao/iniciar`, `POST /{id}/edicao/liberar` |
-| Entrega | `POST /{id}/entrega/publicar`, `POST /{id}/entrega/revogar` |
-| Galeria pública | `GET /api/v1/public/galerias/{token}`, `POST .../selecao`, `POST .../download`, `GET /api/v1/public/galerias/downloads/{token}/selecao.zip` |
+| Entrega | `POST /{id}/entrega/liberar`, `POST /{id}/entrega/liberar-prontas`, `POST /{id}/entrega/revogar-liberacao`, `POST /{id}/entrega/publicar`, `POST /{id}/entrega/revogar`, `POST /{id}/link/renovar` |
+| Galeria pública | `GET /api/v1/public/galerias/{token}`, `POST .../selecao`, `POST .../download`, `GET .../download-zip/validar`, `GET .../download-zip`, `GET /api/v1/public/galerias/downloads/{token}/selecao.zip` |
 | Financeiro | `GET /api/v1/financeiro/mensal?mes=YYYY-MM` |
 | Modelos e estúdio | `/api/v1/modelos-contrato`, `/api/v1/estudio` |
 | Aceite público | `GET/POST /api/v1/public/contratos/{token}`, `POST .../visualizar`, `POST .../aceite`, `POST .../comprovante` |

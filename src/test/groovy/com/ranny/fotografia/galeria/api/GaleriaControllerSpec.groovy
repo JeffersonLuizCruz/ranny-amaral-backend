@@ -530,7 +530,7 @@ class GaleriaControllerSpec extends Specification {
         publica.midias[0].editadaUrl != null
     }
 
-    def "expoe original no payload publico apos liberar raw"() {
+    def "nao expoe original no payload publico mesmo apos liberar raw"() {
         given:
         def preparado = prepararGaleriaComSelecao("Cliente Payload Com Raw")
         mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/edicao/iniciar"))
@@ -549,7 +549,9 @@ class GaleriaControllerSpec extends Specification {
                 .andReturn())
 
         then:
-        publica.midias[0].originalUrl != null
+        publica.midias[0].originalUrl == null
+        publica.midias[0].liberadaEm != null
+        publica.midias[0].disponivelParaDownload
     }
 
     def "nao republica selecao depois do envio"() {
@@ -949,6 +951,94 @@ class GaleriaControllerSpec extends Specification {
         JsonCorpo.mapa(resultado).codigo == "MIDIA_ENTREGUE_NAO_PODE_SER_REMOVIDA"
     }
 
+    def "pre-edita antes da selecao e libera automaticamente com o flag ligado"() {
+        given:
+        def preparado = prepararGaleriaComEdicaoAntesDaSelecao(
+                "Cliente Auto Liberacao", true)
+
+        when:
+        def publica = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/public/galerias/${preparado.linkToken}"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def detalhe = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        publica.fase == "em_liberacao"
+        publica.midias.size() == 1
+        publica.midias[0].liberacaoAutomatica
+        publica.midias[0].disponivelParaDownload
+        publica.midias[0].liberadaEm != null
+        detalhe.links.find { it.tipo == "galeria" } != null
+    }
+
+    def "flag desligado mantem a midia pronta e exige liberacao manual"() {
+        given:
+        def preparado = prepararGaleriaComEdicaoAntesDaSelecao(
+                "Cliente Liberacao Manual", false)
+
+        when:
+        def antes = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/public/galerias/${preparado.linkToken}"))
+                .andExpect(status().isOk())
+                .andReturn())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/liberar")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([midiaIds: [preparado.midiaId]])))
+                .andExpect(status().isOk())
+        def depois = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/public/galerias/${preparado.linkToken}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        !antes.midias[0].liberacaoAutomatica
+        !antes.midias[0].disponivelParaDownload
+        antes.midias[0].liberadaEm == null
+        depois.midias[0].disponivelParaDownload
+        depois.midias[0].liberadaEm != null
+    }
+
+    private Map prepararGaleriaComEdicaoAntesDaSelecao(String nomeCliente,
+                                                       boolean autoLiberacao) {
+        def cliente = Cenario.cliente(clienteRepository, nomeCliente)
+        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0,
+                new BigDecimal("50.00"), null, List.of())
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), StatusAgendamento.REALIZADO)
+        agendamento.atualizarPagamentoEntrada(
+                new BigDecimal("300.00"), new BigDecimal("30.00"),
+                PagamentoEntrada.confirmada(new BigDecimal("300.00"), new BigDecimal("30.00"),
+                        Instant.now(), "Teste"))
+        agendamento.atualizarPagamentoFinal(
+                PagamentoSaldo.recebido(new BigDecimal("700.00"), FormaPagamentoSaldo.PIX,
+                        Instant.now(), "Teste"))
+        agendamentoRepository.saveAndFlush(agendamento)
+
+        def galeria = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/galerias")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([agendamentoId: agendamento.id])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        def midiaId = enviarFoto(galeria.id, "foto.jpg", imagemJpeg())
+        def link = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${galeria.id}/selecao/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+        enviarVersaoEditada([galeriaId: galeria.id, midiaId: midiaId],
+                Color.RED, autoLiberacao)
+        mockMvc.perform(post("/api/v1/public/galerias/${link.token}/selecao")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([fotoIds: [midiaId], videoIds: []])))
+                .andExpect(status().isOk())
+
+        return [galeriaId: galeria.id, midiaId: midiaId, linkToken: link.token]
+    }
+
     private void pagarExtrasPendentes(Map preparado) {
         Cenario.estudioComExtras(estudioRepository)
         def comprovante = "%PDF-1.7\ncomprovante extras".getBytes("US-ASCII")
@@ -1091,17 +1181,19 @@ class GaleriaControllerSpec extends Specification {
         JsonCorpo.mapa(resultado).codigo == "RAW_NAO_LIBERADO"
     }
 
-    private void enviarVersaoEditada(Map preparado, Color cor = Color.RED) {
+    private void enviarVersaoEditada(Map preparado, Color cor = Color.RED,
+                                     boolean liberarAutomaticamente = true) {
         def imagem = imagemJpeg(150, 95, cor)
         storage.simular(imagem.length, "image/jpeg", imagem)
         def sessao = JsonCorpo.mapa(mockMvc.perform(
                 post("/api/v1/galerias/${preparado.galeriaId}/midias/${preparado.midiaId}/editada/upload")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(JsonCorpo.json([
-                                nomeArquivo   : "editada.jpg",
-                                mimeType      : "image/jpeg",
-                                tamanho       : imagem.length,
-                                checksumSha256: sha256(imagem)
+                                nomeArquivo          : "editada.jpg",
+                                mimeType             : "image/jpeg",
+                                tamanho              : imagem.length,
+                                checksumSha256       : sha256(imagem),
+                                liberarAutomaticamente: liberarAutomaticamente
                         ])))
                 .andExpect(status().isOk())
                 .andReturn())

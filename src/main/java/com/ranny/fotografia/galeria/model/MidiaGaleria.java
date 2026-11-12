@@ -13,6 +13,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -77,6 +78,15 @@ public class MidiaGaleria {
     @Column(name = "erro_processamento", length = 500)
     private String erroProcessamento;
 
+    @Column(name = "liberada_em")
+    private Instant liberadaEm;
+
+    @Column(name = "entregue_em")
+    private Instant entregueEm;
+
+    @Column(name = "liberacao_automatica", nullable = false)
+    private boolean liberacaoAutomatica = true;
+
     @Embedded
     private Auditoria auditoria;
 
@@ -93,6 +103,7 @@ public class MidiaGaleria {
         midia.tamanhoBytes = tamanhoBytes;
         midia.ordem = ordem;
         midia.status = tipo == MidiaTipo.FOTO ? MidiaStatus.PROCESSANDO : MidiaStatus.DISPONIVEL;
+        midia.liberacaoAutomatica = true;
         midia.auditoria = Auditoria.iniciar();
         return midia;
     }
@@ -136,5 +147,41 @@ public class MidiaGaleria {
 
     public boolean estaDisponivel() {
         return status == MidiaStatus.DISPONIVEL;
+    }
+
+    public boolean estaLiberada() {
+        return liberadaEm != null;
+    }
+
+    public boolean estaEntregue() {
+        return entregueEm != null;
+    }
+
+    public void liberar() {
+        Instant agora = Instant.now();
+        if (liberadaEm == null) {
+            liberadaEm = agora;
+        }
+        if (entregueEm == null) {
+            entregueEm = agora;
+        }
+        auditoria.marcarAtualizacao();
+    }
+
+    public void entregar() {
+        if (entregueEm == null) {
+            entregueEm = Instant.now();
+        }
+        auditoria.marcarAtualizacao();
+    }
+
+    public void revogarLiberacao() {
+        liberadaEm = null;
+        auditoria.marcarAtualizacao();
+    }
+
+    public void definirLiberacaoAutomatica(boolean liberacaoAutomatica) {
+        this.liberacaoAutomatica = liberacaoAutomatica;
+        auditoria.marcarAtualizacao();
     }
 }

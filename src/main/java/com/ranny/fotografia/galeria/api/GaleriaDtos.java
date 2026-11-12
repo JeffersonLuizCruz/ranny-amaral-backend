@@ -105,6 +105,9 @@ public final class GaleriaDtos {
             String editadaUrl,
             boolean editadaDisponivel,
             boolean editadaProcessando,
+            Instant liberadaEm,
+            boolean disponivelParaDownload,
+            boolean liberacaoAutomatica,
             Instant createdAt
     ) {
         public static MidiaResponse de(MidiaGaleria midia, String thumbUrl, String webUrl,
@@ -128,6 +131,9 @@ public final class GaleriaDtos {
                     editadaUrl,
                     midia.temVersaoEditada(),
                     editadaProcessando,
+                    midia.getLiberadaEm(),
+                    midia.estaLiberada(),
+                    midia.isLiberacaoAutomatica(),
                     midia.getAuditoria().getCriadoEm());
         }
     }
@@ -287,7 +293,12 @@ public final class GaleriaDtos {
             PedidoExtrasResponse extras,
             ResumoExtrasResponse resumoExtras,
             List<String> midiasEntregues,
-            boolean entregaDisponivel
+            boolean entregaDisponivel,
+            String fase,
+            int fotosSelecionadas,
+            int fotosLiberadas,
+            int videosSelecionados,
+            int videosLiberados
     ) {
     }
 
@@ -314,7 +325,8 @@ public final class GaleriaDtos {
             @NotBlank String nomeArquivo,
             @NotBlank String mimeType,
             long tamanho,
-            @NotBlank String checksumSha256
+            @NotBlank String checksumSha256,
+            Boolean liberarAutomaticamente
     ) {
     }
 
@@ -381,6 +393,18 @@ public final class GaleriaDtos {
     }
 
     public record DownloadResponse(String url, Instant expiraEm, String nomeArquivo) {
+    }
+
+    /** Liberacao manual de um lote de midias prontas. */
+    public record LiberarLoteRequest(@NotNull List<String> midiaIds) {
+    }
+
+    public record LiberarLoteResponse(int quantidadeLiberada, int totalLiberado,
+                                      int totalSelecionado) {
+    }
+
+    /** Liga/desliga a liberacao automatica de uma midia. */
+    public record AutoLiberacaoRequest(boolean liberarAutomaticamente) {
     }
 
     /** URL temporaria do ZIP interno com as fotos selecionadas para edicao. */
