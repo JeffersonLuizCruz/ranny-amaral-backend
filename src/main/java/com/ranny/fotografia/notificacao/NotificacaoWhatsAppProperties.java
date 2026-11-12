@@ -14,6 +14,7 @@ public record NotificacaoWhatsAppProperties(
         String publicBaseUrl
 ) {
 
-    public record WhatsApp(boolean habilitado, String provedor) {
+    public record WhatsApp(boolean habilitado, String provedor,
+                           String webhookUrl, String webhookToken) {
     }
 }

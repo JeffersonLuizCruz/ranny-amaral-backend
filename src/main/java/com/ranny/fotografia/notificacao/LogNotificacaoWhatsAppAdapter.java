@@ -13,8 +13,8 @@ import org.springframework.stereotype.Component;
  * com {@code app.notificacao.whatsapp.habilitado=true}.
  */
 @Component
-@ConditionalOnProperty(name = "app.notificacao.whatsapp.habilitado",
-        havingValue = "false", matchIfMissing = true)
+@ConditionalOnProperty(name = "app.notificacao.whatsapp.provedor",
+        havingValue = "log", matchIfMissing = true)
 public class LogNotificacaoWhatsAppAdapter implements NotificacaoWhatsAppPort {
 
     private static final Logger log = LoggerFactory.getLogger(LogNotificacaoWhatsAppAdapter.class);

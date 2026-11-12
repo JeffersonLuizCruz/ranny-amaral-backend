@@ -95,7 +95,6 @@ public class GaleriaService implements GaleriaConsulta {
     private static final int DIAS_SELECAO = 30;
     private static final int DIAS_ENTREGA = 90;
     private static final Duration VALIDADE_DOWNLOAD_SELECAO = Duration.ofMinutes(10);
-    private static final long ZIP_MAX_BYTES = 2L * 1024 * 1024 * 1024;
 
     private final GaleriaRepository galeriaRepository;
     private final MidiaGaleriaRepository midiaRepository;
@@ -114,6 +113,7 @@ public class GaleriaService implements GaleriaConsulta {
     private final ProcessadorMidia processadorMidia;
     private final ApplicationEventPublisher eventos;
     private final boolean processamentoAsync;
+    private final long zipMaxBytes;
 
     public GaleriaService(GaleriaRepository galeriaRepository,
                           MidiaGaleriaRepository midiaRepository,
@@ -132,7 +132,9 @@ public class GaleriaService implements GaleriaConsulta {
                           ProcessadorMidia processadorMidia,
                           ApplicationEventPublisher eventos,
                           @Value("${app.galeria.processamento-async:true}")
-                          boolean processamentoAsync) {
+                          boolean processamentoAsync,
+                           @Value("${app.galeria.zip-max-bytes:2147483648}")
+                           long zipMaxBytes) {
         this.galeriaRepository = galeriaRepository;
         this.midiaRepository = midiaRepository;
         this.derivadoRepository = derivadoRepository;
@@ -150,6 +152,7 @@ public class GaleriaService implements GaleriaConsulta {
         this.processadorMidia = processadorMidia;
         this.eventos = eventos;
         this.processamentoAsync = processamentoAsync;
+        this.zipMaxBytes = zipMaxBytes;
     }
 
     @Transactional
@@ -1338,7 +1341,7 @@ public class GaleriaService implements GaleriaConsulta {
                             ArquivoFinalidade.FOTO_ORIGINAL, contexto.galeria().getId())
                     .map(ArquivoUpload.ArquivoResumo::tamanhoBytes)
                     .orElse(0L);
-            if (totalBytes > ZIP_MAX_BYTES) {
+            if (totalBytes > zipMaxBytes) {
                 throw new RegraDeNegocioException("ZIP_MUITO_GRANDE",
                         "A selecao excede o limite de 2 GB para download em lote.");
             }
@@ -1431,7 +1434,7 @@ public class GaleriaService implements GaleriaConsulta {
                     .map(ArquivoUpload.ArquivoResumo::tamanhoBytes)
                     .orElse(0L);
             totalBytes += tamanho;
-            if (totalBytes > ZIP_MAX_BYTES) {
+            if (totalBytes > zipMaxBytes) {
                 throw new RegraDeNegocioException("ZIP_MUITO_GRANDE",
                         "A galeria excede o limite de 2 GB para download em lote.");
             }

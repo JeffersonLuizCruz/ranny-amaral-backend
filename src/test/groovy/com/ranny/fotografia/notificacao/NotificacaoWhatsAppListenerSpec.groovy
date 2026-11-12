@@ -15,7 +15,7 @@ class NotificacaoWhatsAppListenerSpec extends Specification {
                     "cli-1", "Marina", "11999998888", null, null, null, null))
         }
         def propriedades = new NotificacaoWhatsAppProperties(
-                new NotificacaoWhatsAppProperties.WhatsApp(false, "log"),
+                new NotificacaoWhatsAppProperties.WhatsApp(false, "log", null, null),
                 "https://app.exemplo.com/")
         def listener = new NotificacaoWhatsAppListener(porta, propriedades, clienteConsulta)
 
@@ -42,7 +42,7 @@ class NotificacaoWhatsAppListenerSpec extends Specification {
                     "cli-1", "Marina", null, null, null, null, null))
         }
         def propriedades = new NotificacaoWhatsAppProperties(
-                new NotificacaoWhatsAppProperties.WhatsApp(false, "log"),
+                new NotificacaoWhatsAppProperties.WhatsApp(false, "log", null, null),
                 "https://app.exemplo.com")
         def listener = new NotificacaoWhatsAppListener(porta, propriedades, clienteConsulta)
 

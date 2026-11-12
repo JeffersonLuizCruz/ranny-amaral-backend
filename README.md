@@ -271,6 +271,13 @@ bucket. O download do staff agora é protegido pelo JWT.
   - qualquer pedido de extras pendente bloqueia o início da edição e a publicação da entrega;
   - entrega exige extras pagos ou isentos.
 - Rotas administrativas e públicas estão em `/api/v1/galerias` e `/api/v1/public/galerias`.
+- O limite do ZIP é configurável em `app.galeria.zip-max-bytes` (default 2 GB). A validação ocorre antes do streaming; acima do limite retorna `422 ZIP_MUITO_GRANDE`.
+- **WhatsApp:** o provider padrão é `log` (no-op). Para envio real por webhook, configure:
+  - `app.notificacao.whatsapp.habilitado=true`
+  - `app.notificacao.whatsapp.provedor=webhook`
+  - `app.notificacao.whatsapp.webhook-url=https://...`
+  - `app.notificacao.whatsapp.webhook-token=...`
+  O payload é um POST JSON com `to`, `template=lote_liberado`, `clienteNome`, `link` e as contagens do lote. O adapter é provider-agnostic (Z-API, n8n, gateway interno) e pode ser substituído por Meta Cloud API ou Twilio sem mudar o domínio.
 
 ## Financeiro
 
