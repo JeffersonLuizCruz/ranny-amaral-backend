@@ -902,15 +902,15 @@ public class GaleriaService implements GaleriaConsulta {
     }
 
     private void validarLiberacaoProgressiva(Galeria galeria) {
-        if (galeria.getStatus() != GaleriaStatus.EM_EDICAO
-                && galeria.getStatus() != GaleriaStatus.ENTREGUE) {
-            throw new RegraDeNegocioException("GALERIA_NAO_PRONTA",
-                    "A galeria precisa estar em edicao para liberar midias.");
-        }
         if (extrasRepository.existsByGaleriaIdAndStatus(
                 galeria.getId(), PedidoExtrasStatus.PENDENTE)) {
             throw new RegraDeNegocioException("EXTRAS_PENDENTES",
                     "Confirme ou isente os extras antes de liberar downloads.");
+        }
+        if (galeria.getStatus() != GaleriaStatus.EM_EDICAO
+                && galeria.getStatus() != GaleriaStatus.ENTREGUE) {
+            throw new RegraDeNegocioException("GALERIA_NAO_PRONTA",
+                    "A galeria precisa estar em edicao para liberar midias.");
         }
     }
 
@@ -1082,15 +1082,15 @@ public class GaleriaService implements GaleriaConsulta {
             String token, String midiaId, String versao, String ip, String userAgent) {
         LinkGaleria link = linkAtivoPublico(token);
         Galeria galeria = obter(link.getGaleriaId());
-        if (galeria.getStatus() != GaleriaStatus.EM_EDICAO
-                && galeria.getStatus() != GaleriaStatus.ENTREGUE) {
-            throw new RegraDeNegocioException("ENTREGA_INDISPONIVEL",
-                    "A entrega ainda nao foi liberada.");
-        }
         if (extrasRepository.existsByGaleriaIdAndStatus(
                 galeria.getId(), PedidoExtrasStatus.PENDENTE)) {
             throw new RegraDeNegocioException("EXTRAS_PENDENTES",
                     "Confirme os extras antes de baixar as fotos.");
+        }
+        if (galeria.getStatus() != GaleriaStatus.EM_EDICAO
+                && galeria.getStatus() != GaleriaStatus.ENTREGUE) {
+            throw new RegraDeNegocioException("ENTREGA_INDISPONIVEL",
+                    "A entrega ainda nao foi liberada.");
         }
         MidiaGaleria midia = midiaRepository.findByIdAndGaleriaId(midiaId, galeria.getId())
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Midia", midiaId));
@@ -1376,15 +1376,15 @@ public class GaleriaService implements GaleriaConsulta {
     private List<EntradaZip> entradasZip(String token, String versao) {
         LinkGaleria link = linkAtivoPublico(token);
         Galeria galeria = obter(link.getGaleriaId());
-        if (galeria.getStatus() != GaleriaStatus.EM_EDICAO
-                && galeria.getStatus() != GaleriaStatus.ENTREGUE) {
-            throw new RegraDeNegocioException("ENTREGA_INDISPONIVEL",
-                    "A entrega ainda nao foi liberada.");
-        }
         if (extrasRepository.existsByGaleriaIdAndStatus(
                 galeria.getId(), PedidoExtrasStatus.PENDENTE)) {
             throw new RegraDeNegocioException("EXTRAS_PENDENTES",
                     "Confirme os extras antes de baixar as fotos.");
+        }
+        if (galeria.getStatus() != GaleriaStatus.EM_EDICAO
+                && galeria.getStatus() != GaleriaStatus.ENTREGUE) {
+            throw new RegraDeNegocioException("ENTREGA_INDISPONIVEL",
+                    "A entrega ainda nao foi liberada.");
         }
         String solicitada = versao == null || versao.isBlank()
                 ? "auto" : versao.trim().toLowerCase(Locale.ROOT);
