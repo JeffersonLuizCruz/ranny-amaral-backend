@@ -115,7 +115,7 @@ com.ranny.fotografia
 - `src/main/resources/db/migration/V9__extras_pix_comprovante.sql` adiciona a chave Pix e o comprovante do pedido de extras.
 - `src/main/resources/db/migration/V10__numeracao_midias.sql` renumera as mídias existentes e cria a constraint única de `(galeria_id, tipo, ordem)`.
 - `src/main/resources/db/migration/V11__download_selecao_staff.sql` cria os tokens de curta duração para o staff baixar as fotos selecionadas.
-- `src/main/resources/db/migration/V12__faixas_foto_extra.sql` adiciona as faixas progressivas de preço da foto extra no catálogo e os snapshots JSON em agendamentos, galerias e pedidos de extras.
+- `src/main/resources/db/migration/V12__faixas_foto_extra.sql` adiciona as faixas de preço da foto extra no catálogo e os snapshots JSON em agendamentos, galerias e pedidos de extras.
 - `src/main/resources/db/migration/V13__zip_baixado_galeria.sql` adiciona `zip_baixado_em` na galeria, com backfill dos ZIPs antigos a partir do histórico.
 - `src/main/resources/db/migration/V14__remove_pronta_entrega.sql` remove o estado `PRONTA_ENTREGA`, converte as galerias existentes e ajusta o check constraint.
 - `src/main/resources/db/migration/V15__extras_adicionais.sql` adiciona `selecao_entregue_id` na galeria (trava de mídias já entregues) e o índice de busca do pedido de extras pendente.
@@ -256,7 +256,8 @@ bucket. O download do staff agora é protegido pelo JWT.
   recebimento antes de iniciar a edição.
 - **Extras adicionais:** o staff pode reabrir a seleção mesmo com pedidos já pagos ou isentos. Os pedidos
   anteriores são preservados e o reenvio gera um novo pedido apenas com o **delta** de fotos, calculado
-  pelas faixas progressivas congeladas na galeria. A reabertura é sempre uma ação do staff; o cliente
+  pelas faixas por volume congeladas na galeria (a maior faixa atingida define o valor de todas as extras).
+  A reabertura é sempre uma ação do staff; o cliente
   combina a compra diretamente com o estúdio.
 - **Mídias entregues:** cada mídia liberada recebe `entregue_em`. Em reaberturas futuras, todas as mídias
   já entregues continuam obrigatórias; o cliente só pode acrescentar novas. `selecao_entregue_id` continua

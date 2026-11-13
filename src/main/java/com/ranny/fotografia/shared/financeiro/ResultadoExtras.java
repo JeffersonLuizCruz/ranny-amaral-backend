@@ -3,7 +3,7 @@ package com.ranny.fotografia.shared.financeiro;
 import java.math.BigDecimal;
 import java.util.List;
 
-/** Resultado do calculo progressivo de fotos extras. */
+/** Resultado do calculo de fotos extras por faixa de quantidade. */
 public record ResultadoExtras(
         BigDecimal valorTotal,
         BigDecimal valorMedioUnitario,

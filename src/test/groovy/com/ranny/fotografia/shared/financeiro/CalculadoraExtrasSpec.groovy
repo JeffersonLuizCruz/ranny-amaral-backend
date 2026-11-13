@@ -18,26 +18,29 @@ class CalculadoraExtrasSpec extends Specification {
     }
 
     @Unroll
-    def "calcula progressivamente #quantidade extras"() {
+    def "aplica a faixa alcancada a todas as #quantidade extras"() {
         given:
-        def faixas = [new FaixaFotoExtraSnapshot(11, new BigDecimal("10.00"))]
+        def faixas = [new FaixaFotoExtraSnapshot(3, new BigDecimal("10.00"))]
 
         when:
         def resultado = CalculadoraExtras.calcular(new BigDecimal("15.00"), faixas, quantidade)
 
         then:
         resultado.valorTotal == valorEsperado
+        resultado.detalhamento*.quantidade == (quantidade > 0 ? [quantidade] : [])
+        quantidade == 0 || resultado.detalhamento[0].valorUnitario() == unitarioEsperado
 
         where:
-        quantidade | valorEsperado
-        0          | 0.00
-        1          | 15.00
-        10         | 150.00
-        11         | 160.00
-        15         | 200.00
+        quantidade | valorEsperado | unitarioEsperado
+        0          | 0.00          | null
+        1          | 15.00         | new BigDecimal("15.00")
+        2          | 30.00         | new BigDecimal("15.00")
+        3          | 30.00         | new BigDecimal("10.00")
+        4          | 40.00         | new BigDecimal("10.00")
+        5          | 50.00         | new BigDecimal("10.00")
     }
 
-    def "aplica mais de uma faixa e detalha cada trecho"() {
+    def "aplica a maior faixa alcancada a todas as fotos"() {
         given:
         def faixas = [
                 new FaixaFotoExtraSnapshot(2, new BigDecimal("30.00")),
@@ -48,24 +51,17 @@ class CalculadoraExtrasSpec extends Specification {
         def resultado = CalculadoraExtras.calcular(new BigDecimal("50.00"), faixas, 5)
 
         then:
-        resultado.valorTotal == 150.00
-        resultado.detalhamento*.quantidade == [1, 2, 2]
-        resultado.detalhamento*.valorUnitario == [
-                new BigDecimal("50.00"),
-                new BigDecimal("30.00"),
-                new BigDecimal("20.00")
-        ]
-        resultado.detalhamento*.subtotal == [
-                new BigDecimal("50.00"),
-                new BigDecimal("60.00"),
-                new BigDecimal("40.00")
+        resultado.valorTotal == 100.00
+        resultado.valorMedioUnitario == 20.00
+        resultado.detalhamento == [
+                new FaixaAplicada(5, new BigDecimal("20.00"), new BigDecimal("100.00"))
         ]
     }
 
     def "quantidade zero nao gera detalhamento"() {
         when:
         def resultado = CalculadoraExtras.calcular(new BigDecimal("15.00"),
-                [new FaixaFotoExtraSnapshot(11, new BigDecimal("10.00"))], 0)
+                [new FaixaFotoExtraSnapshot(3, new BigDecimal("10.00"))], 0)
 
         then:
         resultado.valorTotal == 0.00
@@ -75,19 +71,67 @@ class CalculadoraExtrasSpec extends Specification {
 
     def "delta sem cobertura equivale ao calculo total"() {
         given:
-        def faixas = [new FaixaFotoExtraSnapshot(11, new BigDecimal("10.00"))]
+        def faixas = [new FaixaFotoExtraSnapshot(3, new BigDecimal("10.00"))]
 
         when:
         def delta = CalculadoraExtras.calcularDelta(
-                new BigDecimal("15.00"), faixas, 12, 0)
+                new BigDecimal("15.00"), faixas, 4, 0)
 
         then:
-        delta.quantidade == 12
-        delta.valorTotal == 170.00
-        delta.detalhamento*.quantidade == [10, 2]
+        delta.quantidade == 4
+        delta.valorTotal == 40.00
+        delta.detalhamento == [
+                new FaixaAplicada(4, new BigDecimal("10.00"), new BigDecimal("40.00"))
+        ]
     }
 
-    def "delta cobra apenas as fotos marginais dentro da mesma faixa"() {
+    def "delta zero na virada de faixa nao cobra nada"() {
+        given:
+        def faixas = [new FaixaFotoExtraSnapshot(3, new BigDecimal("10.00"))]
+
+        when:
+        def delta = CalculadoraExtras.calcularDelta(
+                new BigDecimal("15.00"), faixas, 3, 2)
+
+        then:
+        delta.quantidade == 1
+        delta.valorTotal == 0.00
+        delta.detalhamento.isEmpty()
+    }
+
+    def "delta apos a virada cobra a diferenca da faixa"() {
+        given:
+        def faixas = [new FaixaFotoExtraSnapshot(3, new BigDecimal("10.00"))]
+
+        when:
+        def delta = CalculadoraExtras.calcularDelta(
+                new BigDecimal("15.00"), faixas, 4, 3)
+
+        then:
+        delta.quantidade == 1
+        delta.valorTotal == 10.00
+        delta.detalhamento == [
+                new FaixaAplicada(1, new BigDecimal("10.00"), new BigDecimal("10.00"))
+        ]
+    }
+
+    def "delta entre duas quantidades abaixo e acima da faixa"() {
+        given:
+        def faixas = [new FaixaFotoExtraSnapshot(3, new BigDecimal("10.00"))]
+
+        when:
+        def delta = CalculadoraExtras.calcularDelta(
+                new BigDecimal("15.00"), faixas, 4, 2)
+
+        then:
+        delta.quantidade == 2
+        delta.valorTotal == 10.00
+        delta.detalhamento == [
+                new FaixaAplicada(2, new BigDecimal("5.00"), new BigDecimal("10.00"))
+        ]
+    }
+
+    def "delta sem faixas usa o preco base"() {
         when:
         def delta = CalculadoraExtras.calcularDelta(
                 new BigDecimal("50.00"), List.of(), 4, 2)
@@ -95,33 +139,8 @@ class CalculadoraExtrasSpec extends Specification {
         then:
         delta.quantidade == 2
         delta.valorTotal == 100.00
-        delta.detalhamento.size() == 1
-        delta.detalhamento[0] == new FaixaAplicada(
-                2, new BigDecimal("50.00"), new BigDecimal("100.00"))
-    }
-
-    def "delta atravessa faixa progressiva"() {
-        given:
-        def faixas = [
-                new FaixaFotoExtraSnapshot(2, new BigDecimal("30.00")),
-                new FaixaFotoExtraSnapshot(4, new BigDecimal("20.00"))
-        ]
-
-        when:
-        def delta = CalculadoraExtras.calcularDelta(
-                new BigDecimal("50.00"), faixas, 4, 1)
-
-        then:
-        delta.quantidade == 3
-        delta.valorTotal == 80.00
-        delta.detalhamento*.quantidade == [2, 1]
-        delta.detalhamento*.valorUnitario == [
-                new BigDecimal("30.00"),
-                new BigDecimal("20.00")
-        ]
-        delta.detalhamento*.subtotal == [
-                new BigDecimal("60.00"),
-                new BigDecimal("20.00")
+        delta.detalhamento == [
+                new FaixaAplicada(2, new BigDecimal("50.00"), new BigDecimal("100.00"))
         ]
     }
 
@@ -134,5 +153,14 @@ class CalculadoraExtrasSpec extends Specification {
         delta.quantidade == 0
         delta.valorTotal == 0.00
         delta.detalhamento.isEmpty()
+    }
+
+    def "rejeita cobertura maior que a quantidade total"() {
+        when:
+        CalculadoraExtras.calcularDelta(
+                new BigDecimal("15.00"), List.of(), 2, 3)
+
+        then:
+        thrown(IllegalArgumentException)
     }
 }

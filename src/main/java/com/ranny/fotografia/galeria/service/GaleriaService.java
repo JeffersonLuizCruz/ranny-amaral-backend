@@ -568,7 +568,7 @@ public class GaleriaService implements GaleriaConsulta {
         }
 
         PedidoExtras pedido = null;
-        if (delta.quantidade() > 0) {
+        if (delta.quantidade() > 0 && delta.valorTotal().signum() > 0) {
             EstudioConsulta.DadosPagamentoExtras pagamentoExtras =
                     estudioConsulta.dadosPagamentoExtras();
             pedido = extrasRepository.save(PedidoExtras.criar(
@@ -1841,9 +1841,18 @@ public class GaleriaService implements GaleriaConsulta {
         BigDecimal valorCoberto = CalculadoraExtras.calcular(
                 galeria.getValorFotoExtra(), galeria.getFaixasFotoExtra(),
                 quantidadeCoberta).valorTotal();
+        int extrasSelecionados = selecaoRepository
+                .findFirstByGaleriaIdOrderByEnviadaEmDesc(galeria.getId())
+                .map(SelecaoGaleria::getFotosExtras)
+                .orElse(0);
+        int quantidadeTotal = Math.max(extrasSelecionados,
+                quantidadeCoberta + quantidadePendente);
+        BigDecimal valorTotal = CalculadoraExtras.calcular(
+                galeria.getValorFotoExtra(), galeria.getFaixasFotoExtra(),
+                quantidadeTotal).valorTotal();
         return new GaleriaDtos.ResumoExtrasResponse(
-                quantidadeCoberta + quantidadePendente,
-                valorCoberto.add(valorPendente),
+                quantidadeTotal,
+                valorTotal,
                 quantidadeCoberta,
                 valorCoberto,
                 quantidadePendente,

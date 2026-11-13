@@ -3,7 +3,7 @@ package com.ranny.fotografia.shared.financeiro;
 import java.math.BigDecimal;
 import java.util.List;
 
-/** Resultado do calculo marginal de um pedido adicional de fotos extras. */
+/** Resultado do delta de um pedido adicional de fotos extras. */
 public record ResultadoDeltaExtras(
         int quantidade,
         BigDecimal valorTotal,

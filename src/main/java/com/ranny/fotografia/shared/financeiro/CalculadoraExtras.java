@@ -4,18 +4,17 @@ import com.ranny.fotografia.shared.model.FaixaFotoExtraSnapshot;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
- * Calculo progressivo das fotos extras.
+ * Calculo de fotos extras por faixa de quantidade.
  *
- * <p>A regra e marginal: o preco base vale ate a primeira faixa; cada faixa
- * vale do seu minimo ate o minimo da proxima (ou ate o fim). Ex.: base 15,
- * faixa 11 -> 10; 15 fotos = 10 x 15 + 5 x 10.
+ * <p>PATTERN: Volume Pricing. A faixa de maior quantidade minima alcancada
+ * define o valor unitario de <strong>todas</strong> as fotos extras daquela
+ * selecao. Ex.: base 15, faixa 3 -> 10; 2 extras = 2 x 15, 3 extras = 3 x 10.
+ *
+ * <p>Sem faixa configurada no pacote, vale apenas o valor base.
  */
 public final class CalculadoraExtras {
 
@@ -23,81 +22,27 @@ public final class CalculadoraExtras {
     }
 
     public static ResultadoExtras calcular(BigDecimal valorBase,
-                                           List<FaixaFotoExtraSnapshot> faixas,
-                                           int quantidade) {
-        BigDecimal base = valorBase == null ? BigDecimal.ZERO : valorBase;
+                                            List<FaixaFotoExtraSnapshot> faixas,
+                                            int quantidade) {
         if (quantidade <= 0) {
             return new ResultadoExtras(zero(), zero(), List.of());
         }
 
-        List<FaixaFotoExtraSnapshot> ordenadas = faixas == null ? List.of()
-                : faixas.stream()
-                        .filter(faixa -> faixa != null
-                                && faixa.quantidadeMinima() > 0
-                                && faixa.valorUnitario() != null)
-                        .sorted(Comparator.comparingInt(FaixaFotoExtraSnapshot::quantidadeMinima))
-                        .toList();
-
-        List<FaixaAplicada> detalhamento = new ArrayList<>();
-        BigDecimal total = zero();
-        int cursor = 1;
-
-        for (int i = 0; i < ordenadas.size() && cursor <= quantidade; i++) {
-            FaixaFotoExtraSnapshot faixa = ordenadas.get(i);
-
-            if (faixa.quantidadeMinima() > cursor) {
-                int fimBase = Math.min(quantidade, faixa.quantidadeMinima() - 1);
-                if (fimBase >= cursor) {
-                    total = total.add(registrar(detalhamento, fimBase - cursor + 1, base));
-                    cursor = fimBase + 1;
-                }
-            }
-
-            if (cursor > quantidade) {
-                break;
-            }
-
-            int proximoMinimo = i + 1 < ordenadas.size()
-                    ? ordenadas.get(i + 1).quantidadeMinima()
-                    : Integer.MAX_VALUE;
-            int fimFaixa = Math.min(quantidade, proximoMinimo - 1);
-            if (fimFaixa >= cursor) {
-                total = total.add(registrar(detalhamento,
-                        fimFaixa - cursor + 1, faixa.valorUnitario()));
-                cursor = fimFaixa + 1;
-            }
-        }
-
-        if (cursor <= quantidade) {
-            total = total.add(registrar(detalhamento, quantidade - cursor + 1, base));
-        }
-
-        BigDecimal valorTotal = total.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal valorMedio = valorTotal.divide(
-                BigDecimal.valueOf(quantidade), 2, RoundingMode.HALF_UP);
-        return new ResultadoExtras(valorTotal, valorMedio, detalhamento);
-    }
-
-    private static BigDecimal registrar(List<FaixaAplicada> detalhamento,
-                                        int quantidade,
-                                        BigDecimal valorUnitario) {
-        BigDecimal unitario = valorUnitario == null ? BigDecimal.ZERO : valorUnitario;
-        BigDecimal subtotal = unitario.multiply(BigDecimal.valueOf(quantidade))
+        BigDecimal unitario = precoUnitario(valorBase, faixas, quantidade);
+        BigDecimal total = unitario.multiply(BigDecimal.valueOf(quantidade))
                 .setScale(2, RoundingMode.HALF_UP);
-        detalhamento.add(new FaixaAplicada(quantidade, unitario, subtotal));
-        return subtotal;
-    }
-
-    private static BigDecimal zero() {
-        return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal medio = total.divide(
+                BigDecimal.valueOf(quantidade), 2, RoundingMode.HALF_UP);
+        return new ResultadoExtras(total, medio,
+                List.of(new FaixaAplicada(quantidade, unitario, total)));
     }
 
     /**
      * Calcula apenas o custo marginal das fotos que ainda nao foram cobertas.
      *
-     * <p>PATTERN: Progressive Pricing + Delta. A quantidade coberta representa
-     * fotos ja pagas ou isentas; o detalhamento devolvido cobre somente as
-     * posicoes {@code quantidadeCoberta + 1} ate {@code quantidadeTotal}.
+     * <p>O total e sempre recalculado com a faixa vigente; por isso uma
+     * quantidade que atinge a faixa pode ter delta zero (as fotos anteriores
+     * sao retroativamente ajustadas para o novo valor unitario).
      */
     public static ResultadoDeltaExtras calcularDelta(BigDecimal valorBase,
                                                      List<FaixaFotoExtraSnapshot> faixas,
@@ -115,36 +60,44 @@ public final class CalculadoraExtras {
         }
 
         ResultadoExtras coberto = calcular(valorBase, faixas, quantidadeCoberta);
-        BigDecimal valorDelta = total.valorTotal().subtract(coberto.valorTotal());
-        return new ResultadoDeltaExtras(
-                quantidadeTotal - quantidadeCoberta,
-                valorDelta.setScale(2, RoundingMode.HALF_UP),
-                subtrair(total.detalhamento(), coberto.detalhamento()));
+        int quantidadeDelta = quantidadeTotal - quantidadeCoberta;
+        BigDecimal valorDelta = total.valorTotal().subtract(coberto.valorTotal())
+                .setScale(2, RoundingMode.HALF_UP);
+
+        if (quantidadeDelta == 0 || valorDelta.signum() <= 0) {
+            return new ResultadoDeltaExtras(quantidadeDelta, zero(), List.of());
+        }
+
+        BigDecimal unitario = valorDelta.divide(
+                BigDecimal.valueOf(quantidadeDelta), 2, RoundingMode.HALF_UP);
+        return new ResultadoDeltaExtras(quantidadeDelta, valorDelta,
+                List.of(new FaixaAplicada(quantidadeDelta, unitario, valorDelta)));
     }
 
-    private static List<FaixaAplicada> subtrair(List<FaixaAplicada> total,
-                                                List<FaixaAplicada> coberto) {
-        Map<BigDecimal, Integer> restante = new LinkedHashMap<>();
-        for (FaixaAplicada faixa : total) {
-            BigDecimal chave = faixa.valorUnitario().setScale(2, RoundingMode.HALF_UP);
-            restante.merge(chave, faixa.quantidade(), Integer::sum);
-        }
-        for (FaixaAplicada faixa : coberto) {
-            BigDecimal chave = faixa.valorUnitario().setScale(2, RoundingMode.HALF_UP);
-            restante.computeIfPresent(chave,
-                    (ignorado, quantidade) -> quantidade - faixa.quantidade());
+    private static BigDecimal precoUnitario(BigDecimal valorBase,
+                                             List<FaixaFotoExtraSnapshot> faixas,
+                                             int quantidade) {
+        BigDecimal unitario = valorBase == null ? BigDecimal.ZERO : valorBase;
+        if (faixas == null) {
+            return unitario;
         }
 
-        List<FaixaAplicada> delta = new ArrayList<>();
-        for (Map.Entry<BigDecimal, Integer> entry : restante.entrySet()) {
-            if (entry.getValue() <= 0) {
-                continue;
+        List<FaixaFotoExtraSnapshot> ordenadas = faixas.stream()
+                .filter(faixa -> faixa != null
+                        && faixa.quantidadeMinima() > 0
+                        && faixa.valorUnitario() != null)
+                .sorted(Comparator.comparingInt(FaixaFotoExtraSnapshot::quantidadeMinima))
+                .toList();
+
+        for (FaixaFotoExtraSnapshot faixa : ordenadas) {
+            if (quantidade >= faixa.quantidadeMinima()) {
+                unitario = faixa.valorUnitario();
             }
-            BigDecimal subtotal = entry.getKey()
-                    .multiply(BigDecimal.valueOf(entry.getValue()))
-                    .setScale(2, RoundingMode.HALF_UP);
-            delta.add(new FaixaAplicada(entry.getValue(), entry.getKey(), subtotal));
         }
-        return delta;
+        return unitario;
+    }
+
+    private static BigDecimal zero() {
+        return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     }
 }

@@ -582,6 +582,15 @@ class GaleriaControllerSpec extends Specification {
         !alterada.editadaDisponivel
         !alterada.previaMarcada
         alterada.thumbUrl.contains("thumb-400.jpg")
+
+        when:
+        def detalhe = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        detalhe.historico.any { it.tipo == "midia_finalidade_alterada" }
     }
 
     def "nao altera a finalidade depois de publicar a selecao"() {
@@ -615,6 +624,102 @@ class GaleriaControllerSpec extends Specification {
         then:
         resultado.response.status == 422
         JsonCorpo.mapa(resultado).codigo == "MIDIA_JA_EDITADA"
+    }
+
+    def "selecao mista com pronta conta extra e so libera apos pagamento"() {
+        given:
+        def preparado = criarGaleriaComFoto("Cliente Misto Extra")
+        def prontaId = enviarFoto(preparado.galeriaId, "pronta-extra.jpg",
+                imagemJpeg(150, 95, Color.GREEN), "pronta")
+        def link = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/selecao/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        when:
+        def selecao = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/public/galerias/${link.token}/selecao")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                fotoIds : [preparado.midiaId, prontaId],
+                                videoIds: []])))
+                .andExpect(status().isOk())
+                .andReturn())
+        def antes = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/public/galerias/${link.token}"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def detalhe = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        selecao.fotosSelecionadas == 2
+        selecao.fotosExtras == 1
+        detalhe.galeria.fotosSelecionadas == 2
+        detalhe.galeria.fotosProntas == 1
+        detalhe.galeria.fotosLiberadas == 0
+        antes.fase == "aguardando_pagamento"
+        antes.midias.every { !it.disponivelParaDownload }
+
+        when:
+        pagarExtrasPendentes([galeriaId: preparado.galeriaId, linkToken: link.token])
+        def depois = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/public/galerias/${link.token}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        depois.midias.find { it.id == prontaId }.disponivelParaDownload
+        !depois.midias.find { it.id == preparado.midiaId }.disponivelParaDownload
+    }
+
+    def "entrega mista com pronta e edicao gera zip com as duas versoes"() {
+        given:
+        def preparado = criarGaleriaComFoto("Cliente Misto Zip", "edicao", 2)
+        def prontaId = enviarFoto(preparado.galeriaId, "pronta-zip.jpg",
+                imagemJpeg(150, 95, Color.GREEN), "pronta")
+        def link = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/selecao/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+        mockMvc.perform(post("/api/v1/public/galerias/${link.token}/selecao")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        fotoIds : [preparado.midiaId, prontaId],
+                        videoIds: []])))
+                .andExpect(status().isOk())
+        enviarVersaoEditada(preparado, Color.CYAN)
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/liberar-prontas"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/liberar-raw"))
+                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/entrega/revogar-raw"))
+                .andExpect(status().isOk())
+
+        when:
+        def entrega = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/entrega/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def detalhe = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def zip = mockMvc.perform(
+                get("/api/v1/public/galerias/${entrega.token}/download-zip")
+                        .param("versao", "auto"))
+                .andExpect(status().isOk())
+                .andReturn()
+
+        then:
+        detalhe.galeria.status == "entregue"
+        detalhe.galeria.fotosSelecionadas == 2
+        detalhe.galeria.fotosProntas == 2
+        detalhe.galeria.fotosLiberadas == 2
+        zip.response.contentAsByteArray.length > 0
+        contarEntradasZip(zip.response.contentAsByteArray) == 2
     }
 
     def "nao expoe original no payload publico mesmo apos liberar raw"() {
@@ -842,7 +947,7 @@ class GaleriaControllerSpec extends Specification {
         resultado.response.status == 404
     }
 
-    def "cobra extras progressivos e reflete no financeiro"() {
+    def "cobra extras pela faixa alcancada e reflete no financeiro"() {
         given:
         def preparado = prepararGaleriaComSelecao("Cliente Faixas Progressivas", true, false, true,
                 [FaixaFotoExtra.de(2, new BigDecimal("30.00"))], 2)
@@ -859,14 +964,92 @@ class GaleriaControllerSpec extends Specification {
 
         then:
         detalhe.selecao.fotosExtras == 2
-        detalhe.selecao.valorExtras == 80.0d
+        detalhe.selecao.valorExtras == 60.0d
         detalhe.extras.valorUnitario == 50.0d
-        detalhe.extras.valorMedioUnitario == 40.0d
-        detalhe.extras.valorTotal == 80.0d
-        detalhe.extras.detalhamento*.quantidade == [1, 1]
-        detalhe.extras.detalhamento*.valorUnitario == [50.0d, 30.0d]
-        financeiro.totalExtras == 80.0d
-        financeiro.totalExtrasPendentes == 80.0d
+        detalhe.extras.valorMedioUnitario == 30.0d
+        detalhe.extras.valorTotal == 60.0d
+        detalhe.extras.detalhamento*.quantidade == [2]
+        detalhe.extras.detalhamento*.valorUnitario == [30.0d]
+        financeiro.totalExtras == 60.0d
+        financeiro.totalExtrasPendentes == 60.0d
+    }
+
+    def "cobra tres extras pela faixa de dez reais"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Faixa Tres", true, false, true,
+                [FaixaFotoExtra.de(3, new BigDecimal("10.00"))], 3, "edicao",
+                new BigDecimal("15.00"))
+
+        when:
+        def detalhe = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        detalhe.selecao.fotosExtras == 3
+        detalhe.selecao.valorExtras == 30.0d
+        detalhe.extras.valorTotal == 30.0d
+        detalhe.extras.valorMedioUnitario == 10.0d
+        detalhe.extras.detalhamento*.quantidade == [3]
+        detalhe.extras.detalhamento*.valorUnitario == [10.0d]
+    }
+
+    def "dois extras antes da faixa continuam no valor base"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Antes Da Faixa", true, false, true,
+                [FaixaFotoExtra.de(3, new BigDecimal("10.00"))], 2, "edicao",
+                new BigDecimal("15.00"))
+
+        when:
+        def detalhe = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        detalhe.selecao.fotosExtras == 2
+        detalhe.selecao.valorExtras == 30.0d
+        detalhe.extras.valorTotal == 30.0d
+        detalhe.extras.detalhamento*.quantidade == [2]
+        detalhe.extras.detalhamento*.valorUnitario == [15.0d]
+    }
+
+    def "delta zero ao atingir a faixa nao cria cobranca pendente"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Delta Faixa", true, false, true,
+                [FaixaFotoExtra.de(3, new BigDecimal("10.00"))], 2, "edicao",
+                new BigDecimal("15.00"))
+        pagarExtrasPendentes(preparado)
+        mockMvc.perform(post("/api/v1/galerias/${preparado.galeriaId}/selecao/reabrir"))
+                .andExpect(status().isOk())
+        def novoExtra = enviarFoto(preparado.galeriaId, "extra-faixa.jpg",
+                imagemJpeg(130, 100, Color.MAGENTA))
+
+        when:
+        mockMvc.perform(post("/api/v1/public/galerias/${preparado.linkToken}/selecao")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        fotoIds : [preparado.midiaId] + preparado.extrasIds + [novoExtra],
+                        videoIds: []])))
+                .andExpect(status().isOk())
+        def detalhe = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/galerias/${preparado.galeriaId}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        detalhe.galeria.status == "em_edicao"
+        detalhe.selecao.fotosExtras == 3
+        detalhe.selecao.valorExtras == 30.0d
+        detalhe.pedidosExtras.size() == 1
+        detalhe.pedidosExtras[0].status == "pago"
+        detalhe.resumoExtras.quantidadeTotal == 3
+        detalhe.resumoExtras.valorTotal == 30.0d
+        detalhe.resumoExtras.quantidadeCoberta == 2
+        detalhe.resumoExtras.valorCoberto == 30.0d
+        detalhe.resumoExtras.quantidadePendente == 0
+        detalhe.resumoExtras.valorPendente == 0.0d
     }
 
     def "publica extras com chave pix e comprovante"() {
@@ -1155,10 +1338,11 @@ class GaleriaControllerSpec extends Specification {
                 .andExpect(status().isOk())
     }
 
-    private Map criarGaleriaComFoto(String nomeCliente, String finalidade = "edicao") {
+    private Map criarGaleriaComFoto(String nomeCliente, String finalidade = "edicao",
+                                    int fotosInclusas = 1) {
         def cliente = Cenario.cliente(clienteRepository, nomeCliente)
-        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0,
-                new BigDecimal("50.00"), null, List.of())
+        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"),
+                fotosInclusas, 0, new BigDecimal("50.00"), null, List.of())
         def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
                 Cenario.amanhaAsDez(), StatusAgendamento.REALIZADO)
         agendamento.atualizarPagamentoEntrada(
@@ -1185,10 +1369,11 @@ class GaleriaControllerSpec extends Specification {
                                           boolean selecionarExtra = false,
                                           List<FaixaFotoExtra> faixas = List.of(),
                                           int quantidadeExtras = 0,
-                                          String finalidade = "edicao") {
+                                          String finalidade = "edicao",
+                                          BigDecimal valorFotoExtra = new BigDecimal("50.00")) {
         def cliente = Cenario.cliente(clienteRepository, nomeCliente)
         def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0,
-                new BigDecimal("50.00"), null, faixas)
+                valorFotoExtra, null, faixas)
         def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
                 Cenario.amanhaAsDez(), StatusAgendamento.REALIZADO)
         agendamento.atualizarPagamentoEntrada(
@@ -1232,7 +1417,8 @@ class GaleriaControllerSpec extends Specification {
                 .andExpect(status().isOk())
 
         return [galeriaId: galeria.id, midiaId: midiaId,
-                extraMidiaId: extraMidiaId, videoId: videoId, linkToken: link.token,
+                extraMidiaId: extraMidiaId, extrasIds: extrasIds,
+                videoId: videoId, linkToken: link.token,
                 mes: java.time.YearMonth.from(agendamento.dataHoraInicio).toString()]
     }
 
@@ -1375,6 +1561,16 @@ class GaleriaControllerSpec extends Specification {
         def saida = new ByteArrayOutputStream()
         ImageIO.write(imagem, "jpg", saida)
         return saida.toByteArray()
+    }
+
+    private static int contarEntradasZip(byte[] conteudo) {
+        int total = 0
+        new ZipInputStream(new ByteArrayInputStream(conteudo)).withCloseable { zip ->
+            while (zip.nextEntry != null) {
+                total++
+            }
+        }
+        return total
     }
 
     private static String sha256(byte[] conteudo) {
