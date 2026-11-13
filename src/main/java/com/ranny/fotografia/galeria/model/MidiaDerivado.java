@@ -44,18 +44,28 @@ public class MidiaDerivado {
     @Column(nullable = false, length = 10)
     private MidiaDerivadoOrigem origem;
 
+    /** Derivado de previa com o nome do estudio aplicado na imagem. */
+    @Column(nullable = false)
+    private boolean marcada;
+
     @Column(name = "criado_em", nullable = false)
     private Instant criadoEm;
 
     public static MidiaDerivado criar(String midiaId, String tipo, String arquivoId,
                                       int largura, int altura, String formato) {
         return criar(midiaId, tipo, arquivoId, largura, altura, formato,
-                MidiaDerivadoOrigem.ORIGINAL);
+                MidiaDerivadoOrigem.ORIGINAL, false);
     }
 
     public static MidiaDerivado criar(String midiaId, String tipo, String arquivoId,
                                       int largura, int altura, String formato,
                                       MidiaDerivadoOrigem origem) {
+        return criar(midiaId, tipo, arquivoId, largura, altura, formato, origem, false);
+    }
+
+    public static MidiaDerivado criar(String midiaId, String tipo, String arquivoId,
+                                      int largura, int altura, String formato,
+                                      MidiaDerivadoOrigem origem, boolean marcada) {
         MidiaDerivado derivado = new MidiaDerivado();
         derivado.id = UUID.randomUUID().toString();
         derivado.midiaId = midiaId;
@@ -65,6 +75,7 @@ public class MidiaDerivado {
         derivado.altura = altura;
         derivado.formato = formato;
         derivado.origem = origem == null ? MidiaDerivadoOrigem.ORIGINAL : origem;
+        derivado.marcada = marcada;
         derivado.criadoEm = Instant.now();
         return derivado;
     }

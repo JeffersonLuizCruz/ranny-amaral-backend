@@ -124,6 +124,15 @@ public class GaleriaController {
                 request.liberarAutomaticamente());
     }
 
+    @PostMapping("/{id}/midias/{midiaId}/finalidade")
+    @Operation(summary = "Corrige a finalidade de uma foto antes da selecao")
+    public GaleriaDtos.MidiaResponse alterarFinalidade(
+            @PathVariable String id,
+            @PathVariable String midiaId,
+            @Valid @RequestBody GaleriaDtos.AlterarFinalidadeRequest request) {
+        return galeriaService.alterarFinalidade(id, midiaId, request.finalidade());
+    }
+
     @DeleteMapping("/{id}/midias/{midiaId}/editada")
     @Operation(summary = "Remove a versao editada vinculada a uma foto")
     public void removerVersaoEditada(@PathVariable String id, @PathVariable String midiaId) {

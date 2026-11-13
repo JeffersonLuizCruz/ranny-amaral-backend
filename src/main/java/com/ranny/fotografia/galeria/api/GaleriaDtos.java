@@ -39,6 +39,9 @@ public final class GaleriaDtos {
             long totalVideos,
             long fotosDisponiveis,
             long videosDisponiveis,
+            long fotosSelecionadas,
+            long fotosProntas,
+            long fotosLiberadas,
             boolean rawLiberado,
             Instant rawLiberadoEm,
             String rawLiberadoPor,
@@ -54,6 +57,8 @@ public final class GaleriaDtos {
     ) {
         public static GaleriaResponse de(Galeria galeria, long totalFotos, long totalVideos,
                                          long fotosDisponiveis, long videosDisponiveis,
+                                         long fotosSelecionadas, long fotosProntas,
+                                         long fotosLiberadas,
                                          String capaUrl, Instant zipBaixadoEm) {
             return new GaleriaResponse(
                     galeria.getId(),
@@ -72,6 +77,9 @@ public final class GaleriaDtos {
                     totalVideos,
                     fotosDisponiveis,
                     videosDisponiveis,
+                    fotosSelecionadas,
+                    fotosProntas,
+                    fotosLiberadas,
                     galeria.isRawLiberado(),
                     galeria.getRawLiberadoEm(),
                     galeria.getRawLiberadoPor(),
@@ -108,6 +116,7 @@ public final class GaleriaDtos {
             Integer duracaoSegundos,
             int ordem,
             String status,
+            String finalidade,
             String erroProcessamento,
             String thumbUrl,
             String webUrl,
@@ -115,6 +124,7 @@ public final class GaleriaDtos {
             String editadaUrl,
             boolean editadaDisponivel,
             boolean editadaProcessando,
+            boolean previaMarcada,
             Instant liberadaEm,
             boolean disponivelParaDownload,
             boolean liberacaoAutomatica,
@@ -122,7 +132,7 @@ public final class GaleriaDtos {
     ) {
         public static MidiaResponse de(MidiaGaleria midia, String thumbUrl, String webUrl,
                                        String originalUrl, String editadaUrl,
-                                       boolean editadaProcessando) {
+                                       boolean editadaProcessando, boolean previaMarcada) {
             return new MidiaResponse(
                     midia.getId(),
                     midia.getTipo().valor(),
@@ -134,6 +144,9 @@ public final class GaleriaDtos {
                     midia.getDuracaoSegundos(),
                     midia.getOrdem(),
                     midia.getStatus().name().toLowerCase(Locale.ROOT),
+                    midia.getFinalidade() == null
+                            ? "edicao"
+                            : midia.getFinalidade().name().toLowerCase(Locale.ROOT),
                     midia.getErroProcessamento(),
                     thumbUrl,
                     webUrl,
@@ -141,6 +154,7 @@ public final class GaleriaDtos {
                     editadaUrl,
                     midia.temVersaoEditada(),
                     editadaProcessando,
+                    previaMarcada,
                     midia.getLiberadaEm(),
                     midia.estaLiberada(),
                     midia.isLiberacaoAutomatica(),
@@ -308,7 +322,8 @@ public final class GaleriaDtos {
             int fotosSelecionadas,
             int fotosLiberadas,
             int videosSelecionados,
-            int videosLiberados
+            int videosLiberados,
+            String estudioNome
     ) {
     }
 
@@ -320,13 +335,15 @@ public final class GaleriaDtos {
             @NotBlank String mimeType,
             long tamanho,
             @NotBlank String checksumSha256,
-            @NotBlank String tipo
+            @NotBlank String tipo,
+            String finalidade
     ) {
     }
 
     public record ConcluirMidiaUploadRequest(
             @NotNull List<ParteRequest> partes,
-            @NotBlank String tipo
+            @NotBlank String tipo,
+            String finalidade
     ) {
     }
 
@@ -415,6 +432,10 @@ public final class GaleriaDtos {
 
     /** Liga/desliga a liberacao automatica de uma midia. */
     public record AutoLiberacaoRequest(boolean liberarAutomaticamente) {
+    }
+
+    /** Corrige a finalidade de uma foto antes da publicacao da selecao. */
+    public record AlterarFinalidadeRequest(@NotBlank String finalidade) {
     }
 
     /** URL temporaria do ZIP interno com as fotos selecionadas para edicao. */

@@ -55,6 +55,15 @@ public class EstudioService implements EstudioConsulta {
 
     @Override
     @Transactional(readOnly = true)
+    public String nome() {
+        return estudioRepository.findById(EstudioConfig.ID)
+                .map(EstudioConfig::getNome)
+                .filter(nome -> nome != null && !nome.isBlank())
+                .orElse("Estudio");
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public DadosPagamentoExtras dadosPagamentoExtras() {
         return estudioRepository.findById(EstudioConfig.ID)
                 .map(estudio -> new DadosPagamentoExtras(

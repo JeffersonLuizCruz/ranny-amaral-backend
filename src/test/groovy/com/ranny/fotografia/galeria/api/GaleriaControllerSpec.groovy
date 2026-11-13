@@ -527,7 +527,94 @@ class GaleriaControllerSpec extends Specification {
 
         then:
         publica.midias[0].originalUrl == null
-        publica.midias[0].editadaUrl != null
+        publica.midias[0].editadaUrl == null
+        publica.midias[0].previaMarcada
+        publica.midias[0].thumbUrl.contains('marca')
+    }
+
+    def "foto pronta na origem fica disponivel para download sem raw"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Foto Pronta", false, false,
+                false, List.of(), 0, "pronta")
+
+        when:
+        def publica = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/public/galerias/${preparado.linkToken}"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def download = mockMvc.perform(
+                post("/api/v1/public/galerias/${preparado.linkToken}/download")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([midiaId: preparado.midiaId, versao: "auto"])))
+                .andExpect(status().isOk())
+                .andReturn()
+        def zip = mockMvc.perform(
+                get("/api/v1/public/galerias/${preparado.linkToken}/download-zip")
+                        .param("versao", "auto"))
+                .andExpect(status().isOk())
+                .andReturn()
+
+        then:
+        publica.midias[0].finalidade == "pronta"
+        publica.midias[0].disponivelParaDownload
+        publica.midias[0].originalUrl == null
+        publica.midias[0].editadaUrl == null
+        publica.midias[0].previaMarcada
+        publica.midias[0].thumbUrl.contains("marca")
+        JsonCorpo.mapa(download).url != null
+        zip.response.contentAsByteArray.length > 0
+    }
+
+    def "altera a finalidade da foto antes da selecao"() {
+        given:
+        def preparado = criarGaleriaComFoto("Cliente Finalidade")
+
+        when:
+        def alterada = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/midias/${preparado.midiaId}/finalidade")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([finalidade: "pronta"])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        alterada.finalidade == "pronta"
+        !alterada.editadaDisponivel
+        !alterada.previaMarcada
+        alterada.thumbUrl.contains("thumb-400.jpg")
+    }
+
+    def "nao altera a finalidade depois de publicar a selecao"() {
+        given:
+        def preparado = prepararGaleriaComSelecao("Cliente Finalidade Bloqueada")
+
+        when:
+        def resultado = mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/midias/${preparado.midiaId}/finalidade")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([finalidade: "pronta"])))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "FINALIDADE_BLOQUEADA"
+    }
+
+    def "nao marca como pronta uma foto que ja tem versao editada"() {
+        given:
+        def preparado = criarGaleriaComFoto("Cliente Finalidade Editada")
+        enviarVersaoEditada(preparado)
+
+        when:
+        def resultado = mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/midias/${preparado.midiaId}/finalidade")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([finalidade: "pronta"])))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "MIDIA_JA_EDITADA"
     }
 
     def "nao expoe original no payload publico mesmo apos liberar raw"() {
@@ -1068,11 +1155,37 @@ class GaleriaControllerSpec extends Specification {
                 .andExpect(status().isOk())
     }
 
+    private Map criarGaleriaComFoto(String nomeCliente, String finalidade = "edicao") {
+        def cliente = Cenario.cliente(clienteRepository, nomeCliente)
+        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0,
+                new BigDecimal("50.00"), null, List.of())
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), StatusAgendamento.REALIZADO)
+        agendamento.atualizarPagamentoEntrada(
+                new BigDecimal("300.00"), new BigDecimal("30.00"),
+                PagamentoEntrada.confirmada(new BigDecimal("300.00"), new BigDecimal("30.00"),
+                        Instant.now(), "Teste"))
+        agendamento.atualizarPagamentoFinal(
+                PagamentoSaldo.recebido(new BigDecimal("700.00"), FormaPagamentoSaldo.PIX,
+                        Instant.now(), "Teste"))
+        agendamentoRepository.saveAndFlush(agendamento)
+
+        def galeria = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/galerias")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([agendamentoId: agendamento.id])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        def midiaId = enviarFoto(galeria.id, "foto.jpg", imagemJpeg(), finalidade)
+        return [galeriaId: galeria.id, midiaId: midiaId]
+    }
+
     private Map prepararGaleriaComSelecao(String nomeCliente, boolean comExtra = false,
                                           boolean comVideo = false,
                                           boolean selecionarExtra = false,
                                           List<FaixaFotoExtra> faixas = List.of(),
-                                          int quantidadeExtras = 0) {
+                                          int quantidadeExtras = 0,
+                                          String finalidade = "edicao") {
         def cliente = Cenario.cliente(clienteRepository, nomeCliente)
         def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0,
                 new BigDecimal("50.00"), null, faixas)
@@ -1093,7 +1206,7 @@ class GaleriaControllerSpec extends Specification {
                 .andExpect(status().isOk())
                 .andReturn())
 
-        def midiaId = enviarFoto(galeria.id, "foto.jpg", imagemJpeg())
+        def midiaId = enviarFoto(galeria.id, "foto.jpg", imagemJpeg(), finalidade)
         int totalExtras = quantidadeExtras > 0 ? quantidadeExtras : (comExtra ? 1 : 0)
         List<String> extrasIds = []
         for (int i = 0; i < totalExtras; i++) {
@@ -1204,7 +1317,8 @@ class GaleriaControllerSpec extends Specification {
                 .andExpect(status().isOk())
     }
 
-    private String enviarFoto(String galeriaId, String nome, byte[] imagem) {
+    private String enviarFoto(String galeriaId, String nome, byte[] imagem,
+                              String finalidade = "edicao") {
         storage.simular(imagem.length, "image/jpeg", imagem)
         def sessao = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/galerias/${galeriaId}/midias/upload")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -1213,14 +1327,16 @@ class GaleriaControllerSpec extends Specification {
                         mimeType      : "image/jpeg",
                         tamanho       : imagem.length,
                         checksumSha256: sha256(imagem),
-                        tipo          : "foto"
+                        tipo          : "foto",
+                        finalidade    : finalidade
                 ])))
                 .andExpect(status().isOk())
                 .andReturn())
         return JsonCorpo.mapa(mockMvc.perform(
                 post("/api/v1/galerias/${galeriaId}/midias/upload/${sessao.arquivoId}/complete")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(JsonCorpo.json([partes: [], tipo: "foto"])))
+                        .content(JsonCorpo.json([partes: [], tipo: "foto",
+                                                 finalidade: finalidade])))
                 .andExpect(status().isOk())
                 .andReturn()).id
     }

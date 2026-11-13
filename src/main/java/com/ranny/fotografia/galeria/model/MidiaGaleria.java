@@ -75,6 +75,10 @@ public class MidiaGaleria {
     @Column(nullable = false, length = 20)
     private MidiaStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private MidiaFinalidade finalidade = MidiaFinalidade.EDICAO;
+
     @Column(name = "erro_processamento", length = 500)
     private String erroProcessamento;
 
@@ -93,6 +97,13 @@ public class MidiaGaleria {
     public static MidiaGaleria criar(String galeriaId, MidiaTipo tipo, String arquivoOriginalId,
                                      String nomeOriginal, String mimeType, long tamanhoBytes,
                                      int ordem) {
+        return criar(galeriaId, tipo, arquivoOriginalId, nomeOriginal, mimeType,
+                tamanhoBytes, ordem, MidiaFinalidade.EDICAO);
+    }
+
+    public static MidiaGaleria criar(String galeriaId, MidiaTipo tipo, String arquivoOriginalId,
+                                     String nomeOriginal, String mimeType, long tamanhoBytes,
+                                     int ordem, MidiaFinalidade finalidade) {
         MidiaGaleria midia = new MidiaGaleria();
         midia.id = UUID.randomUUID().toString();
         midia.galeriaId = galeriaId;
@@ -103,6 +114,7 @@ public class MidiaGaleria {
         midia.tamanhoBytes = tamanhoBytes;
         midia.ordem = ordem;
         midia.status = tipo == MidiaTipo.FOTO ? MidiaStatus.PROCESSANDO : MidiaStatus.DISPONIVEL;
+        midia.finalidade = finalidade == null ? MidiaFinalidade.EDICAO : finalidade;
         midia.liberacaoAutomatica = true;
         midia.auditoria = Auditoria.iniciar();
         return midia;
@@ -149,6 +161,30 @@ public class MidiaGaleria {
         return status == MidiaStatus.DISPONIVEL;
     }
 
+    /** A foto ja foi publicada pronta e nao precisa passar pela edicao. */
+    public boolean prontaNaOrigem() {
+        return finalidade == MidiaFinalidade.PRONTA;
+    }
+
+    /**
+     * Regra unica de "esta midia tem versao final".
+     *
+     * <p>Fotos PRONTA usam o proprio arquivo original; fotos EDICAO exigem a
+     * versao editada ou a liberacao explicita dos RAW.
+     */
+    public boolean prontaParaEntrega(boolean rawLiberado) {
+        if (prontaNaOrigem()) {
+            return estaDisponivel();
+        }
+        if (tipo == MidiaTipo.VIDEO) {
+            return estaDisponivel();
+        }
+        if (temVersaoEditada()) {
+            return true;
+        }
+        return rawLiberado && estaDisponivel();
+    }
+
     public boolean estaLiberada() {
         return liberadaEm != null;
     }
@@ -182,6 +218,11 @@ public class MidiaGaleria {
 
     public void definirLiberacaoAutomatica(boolean liberacaoAutomatica) {
         this.liberacaoAutomatica = liberacaoAutomatica;
+        auditoria.marcarAtualizacao();
+    }
+
+    public void definirFinalidade(MidiaFinalidade finalidade) {
+        this.finalidade = finalidade == null ? MidiaFinalidade.EDICAO : finalidade;
         auditoria.marcarAtualizacao();
     }
 }

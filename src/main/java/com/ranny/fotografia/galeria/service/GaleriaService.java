@@ -18,6 +18,7 @@ import com.ranny.fotografia.galeria.model.LinkGaleriaStatus;
 import com.ranny.fotografia.galeria.model.LinkGaleriaTipo;
 import com.ranny.fotografia.galeria.model.MidiaDerivado;
 import com.ranny.fotografia.galeria.model.MidiaDerivadoOrigem;
+import com.ranny.fotografia.galeria.model.MidiaFinalidade;
 import com.ranny.fotografia.galeria.model.MidiaGaleria;
 import com.ranny.fotografia.galeria.model.MidiaStatus;
 import com.ranny.fotografia.galeria.model.MidiaTipo;
@@ -245,7 +246,7 @@ public class GaleriaService implements GaleriaConsulta {
         var pageable = Paginacao.de(pagina, tamanho, Sort.by(Sort.Direction.ASC, "ordem"));
         Page<MidiaGaleria> midias = midiaRepository
                 .findByGaleriaIdAndStatusNotOrderByOrdemAsc(galeriaId, MidiaStatus.REMOVIDA, pageable);
-        return PaginaResponse.de(midias, midia -> midiaResponse(midia, galeria.getId(), true));
+        return PaginaResponse.de(midias, midia -> midiaResponse(midia, galeria.getId(), true, false));
     }
 
     @Transactional
@@ -261,6 +262,7 @@ public class GaleriaService implements GaleriaConsulta {
             throw new RegraDeNegocioException("TIPO_MIDIA_INVALIDO",
                     "Informe o tipo da midia: foto ou video.");
         }
+        finalidadeUpload(request.finalidade(), tipo);
         ArquivoFinalidade finalidade = tipo == MidiaTipo.FOTO
                 ? ArquivoFinalidade.FOTO_ORIGINAL
                 : ArquivoFinalidade.VIDEO_ORIGINAL;
@@ -286,6 +288,7 @@ public class GaleriaService implements GaleriaConsulta {
             throw new RegraDeNegocioException("TIPO_MIDIA_INVALIDO",
                     "Informe o tipo da midia: foto ou video.");
         }
+        MidiaFinalidade finalidadeMidia = finalidadeUpload(request.finalidade(), tipo);
         ArquivoFinalidade finalidade = tipo == MidiaTipo.FOTO
                 ? ArquivoFinalidade.FOTO_ORIGINAL
                 : ArquivoFinalidade.VIDEO_ORIGINAL;
@@ -302,7 +305,7 @@ public class GaleriaService implements GaleriaConsulta {
         int proximaOrdem = midiaRepository.maiorOrdem(galeriaId, tipo) + 1;
         MidiaGaleria midia = MidiaGaleria.criar(
                 galeriaId, tipo, arquivo.id(), arquivo.nomeOriginal(), arquivo.mimeType(),
-                arquivo.tamanhoBytes(), proximaOrdem);
+                arquivo.tamanhoBytes(), proximaOrdem, finalidadeMidia);
         midiaRepository.save(midia);
         evento(galeria, EventoGaleriaTipo.MIDIA_ENVIADA, arquivo.nomeOriginal() + " enviada.");
 
@@ -315,7 +318,7 @@ public class GaleriaService implements GaleriaConsulta {
             }
         }
         midiaRepository.saveAndFlush(midia);
-        return midiaResponse(midia, galeriaId, true);
+        return midiaResponse(midia, galeriaId, true, false);
     }
 
     @Transactional
@@ -385,7 +388,7 @@ public class GaleriaService implements GaleriaConsulta {
         }
         evento(galeria, EventoGaleriaTipo.MIDIA_EDITADA,
                 "Versao editada de " + midia.getNomeOriginal() + " enviada.");
-        return midiaResponse(midia, galeriaId, true);
+        return midiaResponse(midia, galeriaId, true, false);
     }
 
     /**
@@ -887,7 +890,39 @@ public class GaleriaService implements GaleriaConsulta {
         evento(galeria, EventoGaleriaTipo.LIBERACAO_AUTOMATICA_ALTERADA,
                 "Auto-liberacao de " + midia.getNomeOriginal() + " "
                         + (liberarAutomaticamente ? "ativada" : "desativada") + ".");
-        return midiaResponse(midia, galeriaId, true);
+        return midiaResponse(midia, galeriaId, true, false);
+    }
+
+    @Transactional
+    public GaleriaDtos.MidiaResponse alterarFinalidade(String galeriaId, String midiaId,
+                                                        String valor) {
+        Galeria galeria = obter(galeriaId);
+        MidiaGaleria midia = midiaDaGaleria(galeriaId, midiaId);
+        if (!galeria.aceitaNovasMidias()) {
+            throw new RegraDeNegocioException("FINALIDADE_BLOQUEADA",
+                    "Altere a finalidade antes de publicar a selecao. "
+                            + "Depois disso, reabra a selecao para corrigir.");
+        }
+        if (midia.getTipo() != MidiaTipo.FOTO) {
+            throw new RegraDeNegocioException("FINALIDADE_APENAS_FOTOS",
+                    "Somente fotos podem ter a finalidade alterada.");
+        }
+        MidiaFinalidade finalidade = MidiaFinalidade.de(valor);
+        if (finalidade == null) {
+            throw new RegraDeNegocioException("FINALIDADE_INVALIDA",
+                    "Informe a finalidade 'edicao' ou 'pronta'.");
+        }
+        if (finalidade == MidiaFinalidade.PRONTA && midia.temVersaoEditada()) {
+            throw new RegraDeNegocioException("MIDIA_JA_EDITADA",
+                    "Remova a versao editada antes de marcar a foto como pronta.");
+        }
+        if (midia.getFinalidade() != finalidade) {
+            midia.definirFinalidade(finalidade);
+            evento(galeria, EventoGaleriaTipo.MIDIA_FINALIDADE_ALTERADA,
+                    midia.getNomeOriginal() + (finalidade == MidiaFinalidade.PRONTA
+                            ? " marcada como ja editada." : " marcada para edicao."));
+        }
+        return midiaResponse(midia, galeriaId, true, false);
     }
 
     @Transactional
@@ -942,13 +977,7 @@ public class GaleriaService implements GaleriaConsulta {
     }
 
     private boolean midiaPronta(Galeria galeria, MidiaGaleria midia) {
-        if (midia.getTipo() == MidiaTipo.VIDEO) {
-            return midia.estaDisponivel();
-        }
-        if (midia.temVersaoEditada()) {
-            return true;
-        }
-        return galeria.isRawLiberado() && midia.estaDisponivel();
+        return midia.prontaParaEntrega(galeria.isRawLiberado());
     }
 
     private int totalLiberado(List<MidiaGaleria> midias) {
@@ -1038,7 +1067,7 @@ public class GaleriaService implements GaleriaConsulta {
                 GaleriaDtos.LinkResponse.de(link),
                 response(galeria),
                 midias.stream().map(midia -> midiaResponse(midia, galeria.getId(),
-                        exporOriginal)).toList(),
+                        exporOriginal, true)).toList(),
                 selecao == null ? null : selecaoResponse(selecao),
                 extras == null ? null : extrasResponse(extras, false),
                 resumoExtras(galeria, pedidosExtras),
@@ -1048,7 +1077,8 @@ public class GaleriaService implements GaleriaConsulta {
                 fotosSelecionadas,
                 fotosLiberadas,
                 videosSelecionados,
-                videosLiberados);
+                videosLiberados,
+                estudioConsulta.nome());
     }
 
     private String fasePublica(Galeria galeria, List<PedidoExtras> pedidos) {
@@ -1108,21 +1138,30 @@ public class GaleriaService implements GaleriaConsulta {
 
         String solicitada = versao == null || versao.isBlank()
                 ? "auto" : versao.trim().toLowerCase(Locale.ROOT);
+        if (!"auto".equals(solicitada) && !"original".equals(solicitada)
+                && !"raw".equals(solicitada) && !"editada".equals(solicitada)) {
+            throw new RegraDeNegocioException("VERSAO_INVALIDA",
+                    "Informe a versao 'auto', 'editada' ou 'original'.");
+        }
+
+        boolean prontaNaOrigem = midia.prontaNaOrigem();
         boolean original;
-        if (midia.getTipo() == MidiaTipo.VIDEO) {
+        if (midia.getTipo() == MidiaTipo.VIDEO || prontaNaOrigem) {
+            if (prontaNaOrigem && "editada".equals(solicitada)) {
+                throw new RegraDeNegocioException("EDICAO_NAO_DISPONIVEL",
+                        "Esta foto ja foi publicada como versao final.");
+            }
             original = true;
         } else if ("auto".equals(solicitada)) {
             original = !midia.temVersaoEditada();
         } else if ("original".equals(solicitada) || "raw".equals(solicitada)) {
             original = true;
-        } else if ("editada".equals(solicitada)) {
-            original = false;
         } else {
-            throw new RegraDeNegocioException("VERSAO_INVALIDA",
-                    "Informe a versao 'auto', 'editada' ou 'original'.");
+            original = false;
         }
 
-        if (original && midia.getTipo() == MidiaTipo.FOTO && !galeria.isRawLiberado()) {
+        if (original && midia.getTipo() == MidiaTipo.FOTO
+                && !prontaNaOrigem && !galeria.isRawLiberado()) {
             throw new RegraDeNegocioException("RAW_NAO_LIBERADO",
                     "Os arquivos originais ainda nao foram liberados.");
         }
@@ -1177,6 +1216,7 @@ public class GaleriaService implements GaleriaConsulta {
     private long fotosSemEdicao(Galeria galeria) {
         return midiasDaSelecao(galeria.getId()).stream()
                 .filter(midia -> midia.getTipo() == MidiaTipo.FOTO)
+                .filter(midia -> !midia.prontaNaOrigem())
                 .filter(midia -> !midia.temVersaoEditada())
                 .count();
     }
@@ -1407,6 +1447,11 @@ public class GaleriaService implements GaleriaConsulta {
             boolean original;
             if (midia.getTipo() == MidiaTipo.VIDEO) {
                 original = true;
+            } else if (midia.prontaNaOrigem()) {
+                if ("editada".equals(solicitada)) {
+                    continue;
+                }
+                original = true;
             } else if ("auto".equals(solicitada)) {
                 original = !midia.temVersaoEditada();
             } else {
@@ -1421,7 +1466,7 @@ public class GaleriaService implements GaleriaConsulta {
                 arquivoId = midia.getArquivoOriginalId();
                 finalidade = ArquivoFinalidade.VIDEO_ORIGINAL;
             } else if (original) {
-                if (!galeria.isRawLiberado()) {
+                if (!midia.prontaNaOrigem() && !galeria.isRawLiberado()) {
                     throw new RegraDeNegocioException("RAW_NAO_LIBERADO",
                             "Os arquivos originais ainda nao foram liberados.");
                 }
@@ -1477,7 +1522,7 @@ public class GaleriaService implements GaleriaConsulta {
             byte[] original = arquivoUpload.abrirConteudo(
                     midia.getArquivoOriginalId(), ArquivoFinalidade.FOTO_ORIGINAL, galeria.getId());
             ProcessadorMidia.Resultado resultado = processadorMidia.processar(
-                    original, midia.getNomeOriginal());
+                    original, midia.getNomeOriginal(), estudioConsulta.nome());
             for (ProcessadorMidia.Derivado derivado : resultado.derivados()) {
                 ArquivoUpload.ArquivoResumo arquivo = arquivoUpload.salvarDisponivel(
                         new ArquivoUpload.IniciarArquivo(
@@ -1490,7 +1535,8 @@ public class GaleriaService implements GaleriaConsulta {
                         derivado.conteudo());
                 derivadoRepository.save(MidiaDerivado.criar(
                         midia.getId(), derivado.tipo(), arquivo.id(),
-                        derivado.largura(), derivado.altura(), "jpg"));
+                        derivado.largura(), derivado.altura(), "jpg",
+                        MidiaDerivadoOrigem.ORIGINAL, derivado.marcada()));
             }
             midia.disponivel(resultado.largura(), resultado.altura(), null);
         } catch (RuntimeException ex) {
@@ -1583,16 +1629,33 @@ public class GaleriaService implements GaleriaConsulta {
                 galeria.getId(), MidiaTipo.FOTO, MidiaStatus.DISPONIVEL);
         long videosDisponiveis = midiaRepository.countByGaleriaIdAndTipoAndStatus(
                 galeria.getId(), MidiaTipo.VIDEO, MidiaStatus.DISPONIVEL);
+        List<MidiaGaleria> selecionadas = midiasDaSelecao(galeria.getId());
+        long fotosSelecionadas = selecionadas.stream()
+                .filter(midia -> midia.getTipo() == MidiaTipo.FOTO)
+                .count();
+        long fotosProntas = selecionadas.stream()
+                .filter(midia -> midia.getTipo() == MidiaTipo.FOTO)
+                .filter(midia -> midia.prontaParaEntrega(galeria.isRawLiberado()))
+                .count();
+        long fotosLiberadas = selecionadas.stream()
+                .filter(midia -> midia.getTipo() == MidiaTipo.FOTO)
+                .filter(MidiaGaleria::estaLiberada)
+                .count();
         return GaleriaDtos.GaleriaResponse.de(galeria, totalFotos, totalVideos,
-                fotosDisponiveis, videosDisponiveis, null, galeria.getZipBaixadoEm());
+                fotosDisponiveis, videosDisponiveis, fotosSelecionadas, fotosProntas,
+                fotosLiberadas, null, galeria.getZipBaixadoEm());
     }
 
     private GaleriaDtos.MidiaResponse midiaResponse(MidiaGaleria midia, String galeriaId,
-                                                     boolean exporOriginal) {
+                                                     boolean exporOriginal, boolean publico) {
         String thumbOriginal = null;
         String webOriginal = null;
         String thumbEditada = null;
         String webEditada = null;
+        String thumbOriginalMarcada = null;
+        String webOriginalMarcada = null;
+        String thumbEditadaMarcada = null;
+        String webEditadaMarcada = null;
         boolean temDerivadoEditado = false;
         if (midia.getTipo() == MidiaTipo.FOTO) {
             for (MidiaDerivado derivado : derivadoRepository.findByMidiaId(midia.getId())) {
@@ -1603,13 +1666,25 @@ public class GaleriaService implements GaleriaConsulta {
                     temDerivadoEditado = true;
                 }
                 if ("THUMB".equals(derivado.getTipo())) {
-                    if (editada) {
+                    if (derivado.isMarcada()) {
+                        if (editada) {
+                            thumbEditadaMarcada = url;
+                        } else {
+                            thumbOriginalMarcada = url;
+                        }
+                    } else if (editada) {
                         thumbEditada = url;
                     } else {
                         thumbOriginal = url;
                     }
                 } else if ("WEB".equals(derivado.getTipo())) {
-                    if (editada) {
+                    if (derivado.isMarcada()) {
+                        if (editada) {
+                            webEditadaMarcada = url;
+                        } else {
+                            webOriginalMarcada = url;
+                        }
+                    } else if (editada) {
                         webEditada = url;
                     } else {
                         webOriginal = url;
@@ -1617,24 +1692,49 @@ public class GaleriaService implements GaleriaConsulta {
                 }
             }
         }
-        // A entrega prioriza a versao final; o estudio ainda ve o original em originalUrl.
-        String thumbUrl = thumbEditada == null ? thumbOriginal : thumbEditada;
-        String webUrl = webEditada == null ? webOriginal : webEditada;
+
+        // A previa publica usa sempre o derivado marcado; o download continua limpo.
+        String thumbLimpo = primeiroNaoNulo(thumbEditada, thumbOriginal);
+        String webLimpo = primeiroNaoNulo(webEditada, webOriginal);
+        String thumbMarcado = primeiroNaoNulo(thumbEditadaMarcada, thumbOriginalMarcada);
+        String webMarcado = primeiroNaoNulo(webEditadaMarcada, webOriginalMarcada);
+        boolean previaMarcada = publico && thumbMarcado != null && webMarcado != null;
+        String thumbUrl = previaMarcada ? thumbMarcado : thumbLimpo;
+        String webUrl = previaMarcada ? webMarcado : webLimpo;
+
         String originalUrl = null;
-        if (exporOriginal || midia.getTipo() == MidiaTipo.VIDEO) {
+        if (midia.getTipo() == MidiaTipo.VIDEO || exporOriginal) {
             originalUrl = urlOuNull(midia.getArquivoOriginalId(),
                     midia.getTipo() == MidiaTipo.FOTO
                             ? ArquivoFinalidade.FOTO_ORIGINAL : ArquivoFinalidade.VIDEO_ORIGINAL,
                     galeriaId);
         }
+        // O link publico nunca recebe a versao final limpa; o download resolve isso.
         String editadaUrl = null;
-        if (midia.getArquivoEditadoId() != null) {
+        if (!publico && midia.getArquivoEditadoId() != null) {
             editadaUrl = urlOuNull(midia.getArquivoEditadoId(),
                     ArquivoFinalidade.FOTO_EDITADA, galeriaId);
         }
         boolean editadaProcessando = midia.temVersaoEditada() && !temDerivadoEditado;
         return GaleriaDtos.MidiaResponse.de(midia, thumbUrl, webUrl, originalUrl, editadaUrl,
-                editadaProcessando);
+                editadaProcessando, previaMarcada);
+    }
+
+    private static String primeiroNaoNulo(String primeiro, String segundo) {
+        return primeiro != null ? primeiro : segundo;
+    }
+
+    private MidiaFinalidade finalidadeUpload(String valor, MidiaTipo tipo) {
+        MidiaFinalidade finalidade = MidiaFinalidade.de(valor);
+        if (finalidade == null) {
+            throw new RegraDeNegocioException("FINALIDADE_INVALIDA",
+                    "Informe a finalidade 'edicao' ou 'pronta'.");
+        }
+        if (tipo == MidiaTipo.VIDEO && finalidade == MidiaFinalidade.PRONTA) {
+            throw new RegraDeNegocioException("FINALIDADE_INVALIDA",
+                    "Videos ja sao entregues como original e nao usam a finalidade 'pronta'.");
+        }
+        return finalidade;
     }
 
     private MidiaGaleria midiaDaGaleria(String galeriaId, String midiaId) {
@@ -1646,6 +1746,11 @@ public class GaleriaService implements GaleriaConsulta {
         if (midia.getTipo() != MidiaTipo.FOTO) {
             throw new RegraDeNegocioException("EDICAO_APENAS_FOTOS",
                     "Somente fotos podem receber versao editada.");
+        }
+        if (midia.prontaNaOrigem()) {
+            throw new RegraDeNegocioException("MIDIA_JA_FINAL",
+                    "Esta foto ja foi publicada como versao final. "
+                            + "Remova a midia e envie novamente para substituir.");
         }
         boolean antesDaSelecao = galeria.getStatus() == GaleriaStatus.AGUARDANDO_UPLOAD
                 || galeria.getStatus() == GaleriaStatus.EM_SELECAO;
@@ -1680,7 +1785,7 @@ public class GaleriaService implements GaleriaConsulta {
             byte[] conteudo = arquivoUpload.abrirConteudo(
                     arquivoId, ArquivoFinalidade.FOTO_EDITADA, galeria.getId());
             ProcessadorMidia.Resultado resultado = processadorMidia.processar(
-                    conteudo, midia.getNomeOriginal());
+                    conteudo, midia.getNomeOriginal(), estudioConsulta.nome());
             for (ProcessadorMidia.Derivado derivado : resultado.derivados()) {
                 ArquivoUpload.ArquivoResumo arquivo = arquivoUpload.salvarDisponivel(
                         new ArquivoUpload.IniciarArquivo(
@@ -1695,7 +1800,7 @@ public class GaleriaService implements GaleriaConsulta {
                 derivadoRepository.save(MidiaDerivado.criar(
                         midia.getId(), derivado.tipo(), arquivo.id(),
                         derivado.largura(), derivado.altura(), "jpg",
-                        MidiaDerivadoOrigem.EDITADA));
+                        MidiaDerivadoOrigem.EDITADA, derivado.marcada()));
             }
             midia.vincularEditada(arquivoId, resultado.largura(), resultado.altura());
         } catch (RuntimeException ex) {

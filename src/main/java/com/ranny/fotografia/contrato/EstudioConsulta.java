@@ -9,6 +9,9 @@ package com.ranny.fotografia.contrato;
  */
 public interface EstudioConsulta {
 
+    /** Nome exibido nas paginas publicas e aplicado nas previas das fotos. */
+    String nome();
+
     DadosPagamentoExtras dadosPagamentoExtras();
 
     record DadosPagamentoExtras(String chavePix, String instrucoesPagamento) {

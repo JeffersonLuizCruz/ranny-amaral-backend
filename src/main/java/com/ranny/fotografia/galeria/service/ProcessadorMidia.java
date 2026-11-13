@@ -12,7 +12,7 @@ import java.util.List;
  */
 public interface ProcessadorMidia {
 
-    Resultado processar(byte[] conteudo, String nomeOriginal);
+    Resultado processar(byte[] conteudo, String nomeOriginal, String marcaDagua);
 
     record Derivado(
             String tipo,
@@ -20,7 +20,8 @@ public interface ProcessadorMidia {
             String mimeType,
             byte[] conteudo,
             int largura,
-            int altura
+            int altura,
+            boolean marcada
     ) {
     }
 
