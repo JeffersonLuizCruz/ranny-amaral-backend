@@ -241,6 +241,8 @@ bucket. O download do staff agora é protegido pelo JWT.
   detalhe do staff exibem o mesmo número, da esquerda para a direita; remoções não reutilizam números e
   podem deixar lacunas.
 - **Link único do cliente:** o token de seleção vira o link `GALERIA` e continua válido na entrega. A publicação da seleção vale 30 dias; ao enviar a seleção, o link é estendido para 90 dias e renovado na finalização.
+- O detalhe da galeria e o payload público incluem `pacoteNome`, resolvido pelo pacote vinculado ao
+  agendamento. Se o pacote não existir mais, o campo vem nulo e a interface usa o fallback visual.
 - **Liberação progressiva:** cada mídia tem `liberada_em` (baixável) e `entregue_em` (trava em reaberturas). O cliente vê apenas “Disponível” e “Em liberação”; o backend resolve a melhor versão (editada ou vídeo; RAW apenas em galerias legadas).
 - **Auto-liberação controlada:** o upload da versão editada recebe `liberarAutomaticamente`. Quando ligado, a mídia pronta é liberada após a seleção e a quitação dos extras; quando desligado, o staff libera manualmente em lote.
 - Seleção pública por token de 30 dias; após o envio, o mesmo link é estendido para 90 dias.

@@ -305,7 +305,8 @@ public final class GaleriaDtos {
             PedidoExtrasResponse extras,
             List<PedidoExtrasResponse> pedidosExtras,
             ResumoExtrasResponse resumoExtras,
-            List<EventoResponse> historico
+            List<EventoResponse> historico,
+            String pacoteNome
     ) {
     }
 
@@ -323,7 +324,8 @@ public final class GaleriaDtos {
             int fotosLiberadas,
             int videosSelecionados,
             int videosLiberados,
-            String estudioNome
+            String estudioNome,
+            String pacoteNome
     ) {
     }
 

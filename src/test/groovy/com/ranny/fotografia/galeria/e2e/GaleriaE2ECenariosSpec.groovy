@@ -115,7 +115,8 @@ class GaleriaE2ECenariosSpec extends Specification {
 
         r.obtido = "extras=${d.selecao.fotosExtras}; valor=${d.selecao.valorExtras}; " +
                 "prontas=${d.galeria.fotosProntas}; liberadas=${d.galeria.fotosLiberadas}"
-        r.detalhe = "PRONTA disponíveis=${pub.midias.count { it.disponivelParaDownload }}; " +
+        r.detalhe = "pacote=${d.pacoteNome}; " +
+                "PRONTA disponíveis=${pub.midias.count { it.disponivelParaDownload }}; " +
                 "prévia marcada=${pub.midias.every { it.previaMarcada }}"
 
         then:
@@ -123,6 +124,8 @@ class GaleriaE2ECenariosSpec extends Specification {
         d.selecao.valorExtras == 0.0d
         d.galeria.fotosProntas == 2
         d.galeria.fotosLiberadas == 2
+        d.pacoteNome == "Promocional Cliente S1"
+        pub.pacoteNome == "Promocional Cliente S1"
         pub.midias.findAll { it.finalidade == "pronta" }.every { it.disponivelParaDownload }
         marcarPassou(r)
     }

@@ -39,6 +39,8 @@ import com.ranny.fotografia.galeria.repository.PedidoExtrasRepository;
 import com.ranny.fotografia.galeria.repository.SelecaoGaleriaRepository;
 import com.ranny.fotografia.galeria.repository.SelecaoItemRepository;
 import com.ranny.fotografia.galeria.repository.TokenDownloadSelecaoRepository;
+import com.ranny.fotografia.pacote.PacoteConsulta;
+import com.ranny.fotografia.pacote.PacoteResumo;
 import com.ranny.fotografia.shared.api.PaginaResponse;
 import com.ranny.fotografia.shared.api.Paginacao;
 import com.ranny.fotografia.shared.exception.RecursoExpiradoException;
@@ -110,6 +112,7 @@ public class GaleriaService implements GaleriaConsulta {
     private final AgendamentoConsulta agendamentoConsulta;
     private final ClienteConsulta clienteConsulta;
     private final EstudioConsulta estudioConsulta;
+    private final PacoteConsulta pacoteConsulta;
     private final ArquivoUpload arquivoUpload;
     private final ProcessadorMidia processadorMidia;
     private final ApplicationEventPublisher eventos;
@@ -129,6 +132,7 @@ public class GaleriaService implements GaleriaConsulta {
                           AgendamentoConsulta agendamentoConsulta,
                           ClienteConsulta clienteConsulta,
                           EstudioConsulta estudioConsulta,
+                          PacoteConsulta pacoteConsulta,
                           ArquivoUpload arquivoUpload,
                           ProcessadorMidia processadorMidia,
                           ApplicationEventPublisher eventos,
@@ -149,6 +153,7 @@ public class GaleriaService implements GaleriaConsulta {
         this.agendamentoConsulta = agendamentoConsulta;
         this.clienteConsulta = clienteConsulta;
         this.estudioConsulta = estudioConsulta;
+        this.pacoteConsulta = pacoteConsulta;
         this.arquivoUpload = arquivoUpload;
         this.processadorMidia = processadorMidia;
         this.eventos = eventos;
@@ -236,7 +241,8 @@ public class GaleriaService implements GaleriaConsulta {
                 extras == null ? null : extrasResponse(extras, true),
                 pedidos,
                 resumoExtras(galeria, pedidosExtras),
-                historico);
+                historico,
+                pacoteNome(galeria));
     }
 
     @Transactional(readOnly = true)
@@ -1088,7 +1094,8 @@ public class GaleriaService implements GaleriaConsulta {
                 fotosLiberadas,
                 videosSelecionados,
                 videosLiberados,
-                estudioConsulta.nome());
+                estudioConsulta.nome(),
+                pacoteNome(galeria));
     }
 
     private String fasePublica(Galeria galeria, List<PedidoExtras> pedidos) {
@@ -1628,6 +1635,14 @@ public class GaleriaService implements GaleriaConsulta {
                 .map(selecao -> selecaoItemRepository.findBySelecaoId(selecao.getId()).stream()
                         .anyMatch(item -> item.getMidiaId().equals(midiaId)))
                 .orElse(false);
+    }
+
+    private String pacoteNome(Galeria galeria) {
+        return agendamentoConsulta.buscar(galeria.getAgendamentoId())
+                .map(AgendamentoConsulta.ResumoAgendamento::pacoteId)
+                .flatMap(pacoteConsulta::buscar)
+                .map(PacoteResumo::nome)
+                .orElse(null);
     }
 
     private GaleriaDtos.GaleriaResponse response(Galeria galeria) {
