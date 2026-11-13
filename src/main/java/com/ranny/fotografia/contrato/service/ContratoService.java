@@ -278,6 +278,7 @@ public class ContratoService implements ContratoConsulta {
     public ContratoResponse registrarPagamentoFinal(String id,
                                                     PagamentoContratoRequests.PagamentoFinalRequest request) {
         Contrato contrato = obter(id);
+        validarSaldoFinal(contrato);
         BigDecimal valor = request.valor() == null ? contrato.getSaldoRestante() : request.valor();
         contrato.registrarPagamentoFinal(
                 valor,
@@ -292,6 +293,7 @@ public class ContratoService implements ContratoConsulta {
     @Transactional
     public ContratoResponse isentarPagamentoFinal(String id) {
         Contrato contrato = obter(id);
+        validarSaldoFinal(contrato);
         contrato.isentarPagamentoFinal();
         publicar(contrato);
         return ContratoResponse.de(contrato);
@@ -462,6 +464,19 @@ public class ContratoService implements ContratoConsulta {
                 contrato.getSaldoRestante(),
                 contrato.getStatusPagamento(),
                 contrato.getStatusPagamentoFinal());
+    }
+
+    private void validarSaldoFinal(Contrato contrato) {
+        if (contrato.getStatusAceite() == StatusAceite.CANCELADO
+                || contrato.getStatusPagamento() == PagamentoStatus.CANCELADO) {
+            throw new RegraDeNegocioException("ATENDIMENTO_CANCELADO",
+                    "Contrato cancelado nao aceita registro de saldo final.");
+        }
+        if (contrato.getPagamento() == null
+                || !contrato.getPagamento().getStatus().estaQuitado()) {
+            throw new RegraDeNegocioException("ENTRADA_PENDENTE",
+                    "Confirme a entrada antes de registrar o saldo final.");
+        }
     }
 
     private Contrato obter(String id) {

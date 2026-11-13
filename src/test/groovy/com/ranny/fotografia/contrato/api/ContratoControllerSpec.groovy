@@ -286,6 +286,7 @@ class ContratoControllerSpec extends Specification {
     def "registra o saldo final e permite reabrir quando nao confirmado"() {
         given:
         def contrato = criarContrato()
+        confirmarEntrada(contrato.id)
 
         when:
         def recebido = mockMvc.perform(put("/api/v1/contratos/${contrato.id}/pagamento-final")
@@ -294,8 +295,8 @@ class ContratoControllerSpec extends Specification {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath('$.statusSaldoFinal').value("confirmado"))
                 .andExpect(jsonPath('$.saldoQuitado').value(true))
-                .andExpect(jsonPath('$.valorRecebido').value(700.0d))
-                .andExpect(jsonPath('$.valorPendente').value(300.0d))
+                .andExpect(jsonPath('$.valorRecebido').value(1000.0d))
+                .andExpect(jsonPath('$.valorPendente').value(0.0d))
                 .andExpect(jsonPath('$.pagamentoFinal.formaPagamento').value("dinheiro"))
                 .andReturn()
 
@@ -311,6 +312,21 @@ class ContratoControllerSpec extends Specification {
 
         then:
         receiptsValidos(recebido, isento, reaberto)
+    }
+
+    def "bloqueia saldo final enquanto a entrada esta pendente"() {
+        given:
+        def contrato = criarContrato()
+
+        when:
+        def resultado = mockMvc.perform(put("/api/v1/contratos/${contrato.id}/pagamento-final")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([valor: 700.00, formaPagamento: "dinheiro"])))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "ENTRADA_PENDENTE"
     }
 
     def "marca o contrato como quitado quando entrada e saldo final estao confirmados"() {
@@ -338,6 +354,7 @@ class ContratoControllerSpec extends Specification {
     def "rejeita saldo final parcial e mantem o pagamento pendente"() {
         given:
         def contrato = criarContrato()
+        confirmarEntrada(contrato.id)
 
         when:
         mockMvc.perform(put("/api/v1/contratos/${contrato.id}/pagamento-final")
@@ -419,6 +436,7 @@ class ContratoControllerSpec extends Specification {
         given:
         def recebido = criarContrato()
         criarContrato()
+        confirmarEntrada(recebido.id)
         mockMvc.perform(put("/api/v1/contratos/${recebido.id}/pagamento-final")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(JsonCorpo.json([valor: 700.00, formaPagamento: "pix"])))
@@ -530,6 +548,13 @@ class ContratoControllerSpec extends Specification {
                 .content(JsonCorpo.json(corpoPadrao())))
                 .andExpect(status().isCreated())
                 .andReturn())
+    }
+
+    private void confirmarEntrada(String contratoId) {
+        mockMvc.perform(post("/api/v1/contratos/${contratoId}/pagamento/confirmar")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+                .andExpect(status().isOk())
     }
 
     private Map gerarLink(String contratoId) {

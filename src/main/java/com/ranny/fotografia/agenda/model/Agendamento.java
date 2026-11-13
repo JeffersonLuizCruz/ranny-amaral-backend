@@ -18,7 +18,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.UUID;
 
 /**
@@ -40,6 +42,8 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Agendamento {
+
+    private static final ZoneId FUSO_ESTUDIO = ZoneId.of("America/Sao_Paulo");
 
     @Id
     @Column(length = 64)
@@ -156,6 +160,39 @@ public class Agendamento {
         }
         this.status = novoStatus;
         auditoria.marcarAtualizacao();
+    }
+
+    public boolean entradaQuitada() {
+        return pagamentoEntrada != null && pagamentoEntrada.estaQuitado();
+    }
+
+    public boolean saldoQuitado() {
+        return pagamentoFinal != null && pagamentoFinal.estaQuitado();
+    }
+
+    /**
+     * Promove o atendimento para REALIZADO quando a data do ensaio chegou e
+     * entrada e saldo final estao quitados.
+     *
+     * <p>A data e avaliada no fuso do estudio, nao no offset do banco. Estados
+     * CANCELADO, RESERVADO e REALIZADO nao sao alterados por este metodo.
+     */
+    public boolean promoverParaRealizado(LocalDate hoje) {
+        if (status != StatusAgendamento.CONFIRMADO
+                || dataHoraInicio == null
+                || !entradaQuitada()
+                || !saldoQuitado()) {
+            return false;
+        }
+        LocalDate dataEnsaio = dataHoraInicio
+                .atZoneSameInstant(FUSO_ESTUDIO)
+                .toLocalDate();
+        if (dataEnsaio.isAfter(hoje)) {
+            return false;
+        }
+        this.status = StatusAgendamento.REALIZADO;
+        auditoria.marcarAtualizacao();
+        return true;
     }
 
     public void atualizarPagamentoEntrada(BigDecimal valor, BigDecimal percentual,

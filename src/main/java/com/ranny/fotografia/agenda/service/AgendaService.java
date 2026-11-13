@@ -33,7 +33,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -51,6 +53,7 @@ import java.util.Optional;
 public class AgendaService implements AgendamentoConsulta {
 
     private static final BigDecimal PERCENTUAL_ENTRADA_PADRAO = BigDecimal.valueOf(30);
+    private static final ZoneId FUSO_ESTUDIO = ZoneId.of("America/Sao_Paulo");
 
     private final AgendamentoRepository agendamentoRepository;
     private final ClienteConsulta clienteConsulta;
@@ -247,6 +250,11 @@ public class AgendaService implements AgendamentoConsulta {
         aplicarStatusEntrada(pagamento, request.status());
 
         agendamento.atualizarPagamentoEntrada(valor, percentual, pagamento);
+        if (agendamento.entradaQuitada()
+                && agendamento.getStatus() == StatusAgendamento.RESERVADO) {
+            agendamento.alterarStatus(StatusAgendamento.CONFIRMADO);
+        }
+        agendamento.promoverParaRealizado(LocalDate.now(FUSO_ESTUDIO));
         return AgendamentoResponse.de(agendamento);
     }
 
@@ -254,6 +262,16 @@ public class AgendaService implements AgendamentoConsulta {
     public AgendamentoResponse atualizarPagamentoFinal(String id,
                                                        AgendaRequests.PagamentoFinalRequest request) {
         Agendamento agendamento = obter(id);
+        if (agendamento.getStatus() == StatusAgendamento.CANCELADO) {
+            throw new RegraDeNegocioException("ATENDIMENTO_CANCELADO",
+                    "Atendimento cancelado nao aceita registro de saldo final.");
+        }
+        if ((request.status() == PagamentoStatus.CONFIRMADO
+                || request.status() == PagamentoStatus.ISENTO)
+                && !agendamento.entradaQuitada()) {
+            throw new RegraDeNegocioException("ENTRADA_PENDENTE",
+                    "Confirme a entrada antes de registrar o saldo final.");
+        }
         PagamentoSaldo pagamento = agendamento.getPagamentoFinal();
         if (pagamento == null) {
             pagamento = PagamentoSaldo.pendente(agendamento.getSaldoRestante());
@@ -291,7 +309,27 @@ public class AgendaService implements AgendamentoConsulta {
         }
 
         agendamento.atualizarPagamentoFinal(pagamento);
+        agendamento.promoverParaRealizado(LocalDate.now(FUSO_ESTUDIO));
         return AgendamentoResponse.de(agendamento);
+    }
+
+    /**
+     * Promove para REALIZADO os atendimentos confirmados cuja data ja chegou
+     * e que tenham entrada e saldo final quitados.
+     *
+     * <p>Chamado pelo job diario para cobrir pagamentos feitos antecipadamente.
+     */
+    @Transactional
+    public int promoverRealizados() {
+        LocalDate hoje = LocalDate.now(FUSO_ESTUDIO);
+        int promovidos = 0;
+        for (Agendamento agendamento : agendamentoRepository.findByStatus(
+                StatusAgendamento.CONFIRMADO)) {
+            if (agendamento.promoverParaRealizado(hoje)) {
+                promovidos += 1;
+            }
+        }
+        return promovidos;
     }
 
     @Transactional

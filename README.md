@@ -195,6 +195,19 @@ Resposta padrão:
 - Agenda: `GET /api/v1/agenda` é paginado e aceita `inicio`/`fim`/`status`. O calendário usa `GET /api/v1/agenda/calendario?inicio=...&fim=...`, que exige o período completo.
 - Galerias: `GET /api/v1/galerias` aceita `status`, `q` e `baixada`. `baixada=true` filtra apenas galerias cujo ZIP da entrega já foi baixado pelo cliente (download individual não conta); `baixada=false` faz o inverso. A resposta expõe `zipBaixadoEm`. Seleções sem extras entram em `EM_EDICAO` automaticamente; a publicação da entrega acontece a partir de `EM_EDICAO`.
 
+## Agenda e pagamentos
+
+- A entrada só leva o atendimento para `CONFIRMADO` quando o staff confirma o pagamento.
+- O saldo final só pode ser registrado com a entrada quitada; caso contrário a API retorna
+  `422 ENTRADA_PENDENTE`.
+- Atendimento `CANCELADO` bloqueia novo registro de saldo final (`422 ATENDIMENTO_CANCELADO`).
+- Saldo final pago **antes** da data do ensaio apenas registra o pagamento; o status permanece `CONFIRMADO`.
+- Saldo final pago **na data ou depois**, com entrada e saldo quitados, promove o atendimento para `REALIZADO`.
+- Entrada que cobre 100% do pacote deixa o saldo isento e segue a mesma regra de data.
+- Um job diário às `00:05` de `America/Sao_Paulo` promove para `REALIZADO` os atendimentos
+  `CONFIRMADO` com data <= hoje e pagamentos quitados.
+- Reabrir o saldo final não reverte um atendimento já `REALIZADO`.
+
 ## Upload de comprovantes
 
 O arquivo **não passa pelo Spring**. O navegador envia direto ao Garage/S3 por URLs pré-assinadas:

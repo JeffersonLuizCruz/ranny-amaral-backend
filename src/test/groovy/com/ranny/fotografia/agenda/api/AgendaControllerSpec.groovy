@@ -327,6 +327,7 @@ class AgendaControllerSpec extends Specification {
         then:
         JsonCorpo.mapa(entrada).saldoRestante == 700.0d
         JsonCorpo.mapa(saldo).pagamentoFinal.recebidoEm
+        JsonCorpo.mapa(saldo).status == "confirmado"
     }
 
     def "rejeita saldo final parcial no agendamento"() {
@@ -334,6 +335,10 @@ class AgendaControllerSpec extends Specification {
         def cliente = Cenario.cliente(clienteRepository)
         def pacote = Cenario.pacote(pacoteRepository)
         def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote)
+        mockMvc.perform(put("/api/v1/agenda/${agendamento.id}/pagamento-entrada")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([valor: 300.00, percentual: 30.00, status: "confirmado"])))
+                .andExpect(status().isOk())
 
         when:
         def resultado = mockMvc.perform(put("/api/v1/agenda/${agendamento.id}/pagamento-final")
@@ -345,6 +350,49 @@ class AgendaControllerSpec extends Specification {
         resultado.response.status == 422
         JsonCorpo.mapa(resultado).codigo == "SALDO_FINAL_INTEGRAL_OBRIGATORIO"
         agendamentoRepository.findById(agendamento.id).get().pagamentoFinal.status == PagamentoStatus.PENDENTE
+    }
+
+    def "bloqueia saldo final enquanto a entrada esta pendente"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository)
+        def pacote = Cenario.pacote(pacoteRepository)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote)
+
+        when:
+        def resultado = mockMvc.perform(put("/api/v1/agenda/${agendamento.id}/pagamento-final")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([valor: 700.00, status: "confirmado", formaPagamento: "dinheiro"])))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "ENTRADA_PENDENTE"
+        agendamentoRepository.findById(agendamento.id).get().pagamentoFinal.status == PagamentoStatus.PENDENTE
+    }
+
+    def "promove para realizado quando a data do ensaio ja passou"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository)
+        def pacote = Cenario.pacote(pacoteRepository)
+        def inicio = OffsetDateTime.now().minusDays(1).withHour(10).withMinute(0)
+                .withSecond(0).withNano(0)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote, inicio)
+        mockMvc.perform(put("/api/v1/agenda/${agendamento.id}/pagamento-entrada")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([valor: 300.00, percentual: 30.00, status: "confirmado"])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.status').value("confirmado"))
+
+        when:
+        def saldo = mockMvc.perform(put("/api/v1/agenda/${agendamento.id}/pagamento-final")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([valor: 700.00, status: "confirmado", formaPagamento: "dinheiro"])))
+                .andExpect(status().isOk())
+                .andReturn()
+
+        then:
+        JsonCorpo.mapa(saldo).status == "realizado"
+        agendamentoRepository.findById(agendamento.id).get().status == StatusAgendamento.REALIZADO
     }
 
     def "impede excluir agendamento com contrato vinculado"() {

@@ -35,6 +35,8 @@ public interface AgendamentoRepository extends JpaRepository<Agendamento, String
     Page<Agendamento> findByStatusOrderByDataHoraInicioAsc(
             StatusAgendamento status, Pageable pageable);
 
+    List<Agendamento> findByStatus(StatusAgendamento status);
+
     boolean existsByClienteId(String clienteId);
 
     boolean existsByPacoteId(String pacoteId);
