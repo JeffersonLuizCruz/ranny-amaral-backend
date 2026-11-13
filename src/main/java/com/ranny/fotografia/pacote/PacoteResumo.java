@@ -22,6 +22,7 @@ import java.util.Optional;
 public record PacoteResumo(
         String id,
         String nome,
+        String corHex,
         int duracaoMinutos,
         BigDecimal valor,
         List<String> itensInclusos,

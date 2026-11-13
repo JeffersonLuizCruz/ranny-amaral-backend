@@ -224,6 +224,7 @@ public class PacoteService implements PacoteConsulta {
         return new PacoteResumo(
                 pacote.getId(),
                 pacote.getNome(),
+                pacote.getCorHex(),
                 pacote.getDuracaoMinutos(),
                 pacote.getValor(),
                 pacote.getItensInclusos(),

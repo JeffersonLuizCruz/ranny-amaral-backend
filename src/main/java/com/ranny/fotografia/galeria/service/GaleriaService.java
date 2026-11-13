@@ -234,15 +234,16 @@ public class GaleriaService implements GaleriaConsulta {
         List<GaleriaDtos.PedidoExtrasResponse> pedidos = pedidosExtras.stream()
                 .map(pedido -> extrasResponse(pedido, true))
                 .toList();
+        GaleriaDtos.GaleriaResponse galeriaResponse = response(galeria);
         return new GaleriaDtos.GaleriaDetalheResponse(
-                response(galeria),
+                galeriaResponse,
                 links,
                 selecao == null ? null : selecaoResponse(selecao),
                 extras == null ? null : extrasResponse(extras, true),
                 pedidos,
                 resumoExtras(galeria, pedidosExtras),
                 historico,
-                pacoteNome(galeria));
+                galeriaResponse.pacoteNome());
     }
 
     @Transactional(readOnly = true)
@@ -1079,9 +1080,10 @@ public class GaleriaService implements GaleriaConsulta {
         // legada. O link unico nunca revela RAW; o download resolve a versao.
         boolean exporOriginal = link.getTipo() == LinkGaleriaTipo.ENTREGA
                 && galeria.isRawLiberado();
+        GaleriaDtos.GaleriaResponse galeriaResponse = response(galeria);
         return new GaleriaDtos.GaleriaPublicaResponse(
                 GaleriaDtos.LinkResponse.de(link),
-                response(galeria),
+                galeriaResponse,
                 midias.stream().map(midia -> midiaResponse(midia, galeria.getId(),
                         exporOriginal, true)).toList(),
                 selecao == null ? null : selecaoResponse(selecao),
@@ -1095,7 +1097,7 @@ public class GaleriaService implements GaleriaConsulta {
                 videosSelecionados,
                 videosLiberados,
                 estudioConsulta.nome(),
-                pacoteNome(galeria));
+                galeriaResponse.pacoteNome());
     }
 
     private String fasePublica(Galeria galeria, List<PedidoExtras> pedidos) {
@@ -1637,11 +1639,10 @@ public class GaleriaService implements GaleriaConsulta {
                 .orElse(false);
     }
 
-    private String pacoteNome(Galeria galeria) {
+    private PacoteResumo pacoteDaGaleria(Galeria galeria) {
         return agendamentoConsulta.buscar(galeria.getAgendamentoId())
                 .map(AgendamentoConsulta.ResumoAgendamento::pacoteId)
                 .flatMap(pacoteConsulta::buscar)
-                .map(PacoteResumo::nome)
                 .orElse(null);
     }
 
@@ -1666,9 +1667,12 @@ public class GaleriaService implements GaleriaConsulta {
                 .filter(midia -> midia.getTipo() == MidiaTipo.FOTO)
                 .filter(MidiaGaleria::estaLiberada)
                 .count();
+        PacoteResumo pacote = pacoteDaGaleria(galeria);
         return GaleriaDtos.GaleriaResponse.de(galeria, totalFotos, totalVideos,
                 fotosDisponiveis, videosDisponiveis, fotosSelecionadas, fotosProntas,
-                fotosLiberadas, null, galeria.getZipBaixadoEm());
+                fotosLiberadas, null, galeria.getZipBaixadoEm(),
+                pacote == null ? null : pacote.nome(),
+                pacote == null ? null : pacote.corHex());
     }
 
     private GaleriaDtos.MidiaResponse midiaResponse(MidiaGaleria midia, String galeriaId,

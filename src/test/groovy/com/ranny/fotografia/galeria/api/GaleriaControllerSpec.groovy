@@ -862,6 +862,29 @@ class GaleriaControllerSpec extends Specification {
         detalheZip.galeria.zipBaixadoEm != null
     }
 
+    def "lista galerias com nome e cor do pacote escolhido"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository, "Cliente Cor Pacote")
+        def pacote = Cenario.pacote(pacoteRepository, "Pacote Colorido",
+                new BigDecimal("1000.00"), 1, 0)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), StatusAgendamento.RESERVADO)
+        mockMvc.perform(post("/api/v1/galerias")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([agendamentoId: agendamento.id])))
+                .andExpect(status().isOk())
+
+        when:
+        def lista = JsonCorpo.mapa(mockMvc.perform(get("/api/v1/galerias"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def item = lista.itens.find { it.agendamentoId == agendamento.id }
+
+        then:
+        item.pacoteNome == "Pacote Colorido"
+        item.pacoteCorHex == "#7C3AED"
+    }
+
     def "numera fotos em sequencia e nao reutiliza numero apos remocao"() {
         given:
         def cliente = Cenario.cliente(clienteRepository, "Cliente Numeracao")

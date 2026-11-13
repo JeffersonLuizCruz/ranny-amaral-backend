@@ -53,13 +53,16 @@ public final class GaleriaDtos {
             long bytesExpurgados,
             String capaUrl,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            String pacoteNome,
+            String pacoteCorHex
     ) {
         public static GaleriaResponse de(Galeria galeria, long totalFotos, long totalVideos,
                                          long fotosDisponiveis, long videosDisponiveis,
                                          long fotosSelecionadas, long fotosProntas,
                                          long fotosLiberadas,
-                                         String capaUrl, Instant zipBaixadoEm) {
+                                         String capaUrl, Instant zipBaixadoEm,
+                                         String pacoteNome, String pacoteCorHex) {
             return new GaleriaResponse(
                     galeria.getId(),
                     galeria.getAgendamentoId(),
@@ -91,7 +94,9 @@ public final class GaleriaDtos {
                     galeria.getBytesExpurgados(),
                     capaUrl,
                     galeria.getAuditoria().getCriadoEm(),
-                    galeria.getAuditoria().getAtualizadoEm());
+                    galeria.getAuditoria().getAtualizadoEm(),
+                    pacoteNome,
+                    pacoteCorHex);
         }
     }
 
