@@ -227,16 +227,26 @@ public class GaleriaController {
         return galeriaService.renovarLink(id);
     }
 
+    /**
+     * @deprecated RAW não é mais exposto na UI; endpoint mantido para
+     * compatibilidade, automação e QA.
+     */
+    @Deprecated(since = "2026-11", forRemoval = false)
     @PostMapping("/{id}/entrega/liberar-raw")
-    @Operation(summary = "Libera os arquivos originais para download")
+    @Operation(summary = "Libera os arquivos originais para download (depreciado)")
     public GaleriaDtos.GaleriaResponse liberarRaw(
             @PathVariable String id,
             @RequestBody(required = false) GaleriaDtos.LiberacaoRawRequest request) {
         return galeriaService.liberarRaw(id, request == null ? null : request.por());
     }
 
+    /**
+     * @deprecated RAW não é mais exposto na UI; endpoint mantido para
+     * compatibilidade, automação e QA.
+     */
+    @Deprecated(since = "2026-11", forRemoval = false)
     @PostMapping("/{id}/entrega/revogar-raw")
-    @Operation(summary = "Revoga a liberacao dos arquivos originais")
+    @Operation(summary = "Revoga a liberacao dos arquivos originais (depreciado)")
     public GaleriaDtos.GaleriaResponse revogarRaw(@PathVariable String id) {
         return galeriaService.revogarRaw(id);
     }

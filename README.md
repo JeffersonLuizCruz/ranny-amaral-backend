@@ -241,11 +241,26 @@ bucket. O download do staff agora é protegido pelo JWT.
   detalhe do staff exibem o mesmo número, da esquerda para a direita; remoções não reutilizam números e
   podem deixar lacunas.
 - **Link único do cliente:** o token de seleção vira o link `GALERIA` e continua válido na entrega. A publicação da seleção vale 30 dias; ao enviar a seleção, o link é estendido para 90 dias e renovado na finalização.
-- **Liberação progressiva:** cada mídia tem `liberada_em` (baixável) e `entregue_em` (trava em reaberturas). O cliente vê apenas “Disponível” e “Em liberação”; o backend resolve a melhor versão (editada, RAW ou vídeo).
+- **Liberação progressiva:** cada mídia tem `liberada_em` (baixável) e `entregue_em` (trava em reaberturas). O cliente vê apenas “Disponível” e “Em liberação”; o backend resolve a melhor versão (editada ou vídeo; RAW apenas em galerias legadas).
 - **Auto-liberação controlada:** o upload da versão editada recebe `liberarAutomaticamente`. Quando ligado, a mídia pronta é liberada após a seleção e a quitação dos extras; quando desligado, o staff libera manualmente em lote.
 - Seleção pública por token de 30 dias; após o envio, o mesmo link é estendido para 90 dias.
 - O payload público do link único **não** expõe a URL do original; downloads individuais e ZIP passam pelo
   endpoint que valida a liberação e registra o evento. Apenas links `ENTREGA` antigos ainda expõem RAW.
+
+### RAW — funcionalidade depreciada
+
+- A interface do frontend **não expõe mais** as ações de liberar ou revogar RAW.
+- Os endpoints `POST /api/v1/galerias/{id}/entrega/liberar-raw` e
+  `POST /api/v1/galerias/{id}/entrega/revogar-raw` permanecem no backend apenas para
+  **compatibilidade, automação e QA**.
+- Os campos `raw_liberado`, `raw_liberado_em` e `raw_liberado_por` continuam no banco e no DTO
+  público para leitura de galerias antigas.
+- Galerias que já tinham RAW liberado continuam funcionando; não há nova ação de UI para
+  revogar esse estado.
+- Para novas galerias, a operação padrão é entregar **versão editada** ou foto publicada como
+  **pronta**. O RAW não é mais necessário no fluxo operacional.
+- A remoção definitiva do backend exige migração/limpeza dos campos, remoção dos endpoints e
+  um plano para galerias legadas. Não fazer isso sem essa análise.
 - `GET /api/v1/public/galerias/{token}/download-zip/validar` valida o lote antes do streaming.
 - O staff baixa as fotos selecionadas para edição por
   `POST /api/v1/galerias/{id}/selecao/download`, que devolve uma URL temporária (10 min) para

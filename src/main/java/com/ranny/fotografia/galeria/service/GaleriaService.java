@@ -999,6 +999,11 @@ public class GaleriaService implements GaleriaConsulta {
                 selecionadas.size()));
     }
 
+    /**
+     * @deprecated RAW não é mais exposto na UI; mantido para compatibilidade,
+     * automação e QA.
+     */
+    @Deprecated(since = "2026-11", forRemoval = false)
     @Transactional
     public GaleriaDtos.GaleriaResponse liberarRaw(String galeriaId, String por) {
         Galeria galeria = obter(galeriaId);
@@ -1010,6 +1015,11 @@ public class GaleriaService implements GaleriaConsulta {
         return response(galeria);
     }
 
+    /**
+     * @deprecated RAW não é mais exposto na UI; mantido para compatibilidade,
+     * automação e QA.
+     */
+    @Deprecated(since = "2026-11", forRemoval = false)
     @Transactional
     public GaleriaDtos.GaleriaResponse revogarRaw(String galeriaId) {
         Galeria galeria = obter(galeriaId);
