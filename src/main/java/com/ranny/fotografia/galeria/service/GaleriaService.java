@@ -1629,7 +1629,9 @@ public class GaleriaService implements GaleriaConsulta {
                 .map(SelecaoItem::getMidiaId)
                 .toList();
         return midiaRepository.findByGaleriaIdAndIdInAndStatus(
-                galeriaId, ids, MidiaStatus.DISPONIVEL);
+                        galeriaId, ids, MidiaStatus.DISPONIVEL).stream()
+                .sorted(java.util.Comparator.comparingInt(MidiaGaleria::getOrdem))
+                .toList();
     }
 
     private boolean midiaSelecionada(String galeriaId, String midiaId) {

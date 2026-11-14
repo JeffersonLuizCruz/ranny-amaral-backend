@@ -922,6 +922,56 @@ class GaleriaControllerSpec extends Specification {
         ativas.find { it.id == quarta }.ordem == 4
     }
 
+    def "ordena a selecao publica pela numeracao da esquerda para a direita"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository, "Cliente Ordem Publica")
+        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 3, 0)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), StatusAgendamento.REALIZADO)
+        agendamento.atualizarPagamentoEntrada(
+                new BigDecimal("300.00"), new BigDecimal("30.00"),
+                PagamentoEntrada.confirmada(new BigDecimal("300.00"), new BigDecimal("30.00"),
+                        Instant.now(), "Teste"))
+        agendamento.atualizarPagamentoFinal(
+                PagamentoSaldo.recebido(new BigDecimal("700.00"), FormaPagamentoSaldo.PIX,
+                        Instant.now(), "Teste"))
+        agendamentoRepository.saveAndFlush(agendamento)
+
+        def galeria = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/galerias")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([agendamentoId: agendamento.id])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        def primeira = enviarFoto(galeria.id, "foto-1.jpg", imagemJpeg(120, 80, Color.BLUE))
+        def segunda = enviarFoto(galeria.id, "foto-2.jpg", imagemJpeg(121, 80, Color.RED))
+        def terceira = enviarFoto(galeria.id, "foto-3.jpg", imagemJpeg(122, 80, Color.GREEN))
+
+        def link = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${galeria.id}/selecao/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        mockMvc.perform(post("/api/v1/public/galerias/${link.token}/selecao")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        fotoIds : [terceira, primeira, segunda],
+                        videoIds: []
+                ])))
+                .andExpect(status().isOk())
+
+        when:
+        def publica = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/public/galerias/${link.token}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        publica.midias.size() == 3
+        publica.midias*.ordem == [1, 2, 3]
+        publica.midias*.nomeOriginal == ["foto-1.jpg", "foto-2.jpg", "foto-3.jpg"]
+    }
+
     def "prepara e baixa zip das fotos selecionadas para edicao"() {
         given:
         def preparado = prepararGaleriaComSelecao(
