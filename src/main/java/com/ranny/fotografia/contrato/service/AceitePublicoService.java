@@ -126,11 +126,13 @@ public class AceitePublicoService {
                 request.documento(),
                 request.cidade(),
                 request.whatsapp(),
+                request.autorizaUsoImagem(),
                 aceitoEm,
                 protocolo,
                 ip,
                 userAgent,
-                hashConteudo(contrato.getNumero(), request.documento(), aceitoEm));
+                hashConteudo(contrato.getNumero(), request.documento(), aceitoEm,
+                        request.autorizaUsoImagem()));
 
         contrato.registrarAceite(dados, cliente.id(), solicitacao.getId());
         solicitacao.aceitar(dados);
@@ -255,10 +257,12 @@ public class AceitePublicoService {
         eventos.publishEvent(ContratoEventoFactory.de(contrato));
     }
 
-    private static String hashConteudo(String numero, String documento, Instant aceitoEm) {
+    private static String hashConteudo(String numero, String documento, Instant aceitoEm,
+                                       Boolean autorizaUsoImagem) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            String conteudo = numero + "|" + documento + "|" + aceitoEm;
+            String conteudo = numero + "|" + documento + "|" + aceitoEm + "|"
+                    + Boolean.TRUE.equals(autorizaUsoImagem);
             return HexFormat.of().formatHex(digest.digest(conteudo.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 indisponivel", e);

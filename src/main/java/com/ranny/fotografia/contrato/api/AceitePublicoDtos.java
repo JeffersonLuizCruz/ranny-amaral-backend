@@ -40,7 +40,9 @@ public final class AceitePublicoDtos {
             String cidade,
 
             @Size(max = 30, message = "deve ter no maximo 30 caracteres")
-            String whatsapp
+            String whatsapp,
+
+            Boolean autorizaUsoImagem
     ) {
     }
 

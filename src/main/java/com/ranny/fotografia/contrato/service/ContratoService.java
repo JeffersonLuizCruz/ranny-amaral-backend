@@ -370,6 +370,7 @@ public class ContratoService implements ContratoConsulta {
         ResolvedorClausulas.DadosResolucao dadosResolucao = new ResolvedorClausulas.DadosResolucao(
                 numero,
                 dataEmissao == null ? agora : dataEmissao,
+                request.dataValidade(),
                 valorTotal,
                 entrada,
                 percentual,

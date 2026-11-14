@@ -129,11 +129,12 @@ class AceitePublicoSpec extends Specification {
         def resultado = mockMvc.perform(post("/api/v1/public/contratos/${link.token}/aceite")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(JsonCorpo.json([
-                        nomeCompleto  : "Juliana Prado",
-                        tipoDocumento : "cpf",
-                        documento     : "123.456.789-00",
-                        cidade        : "São Paulo",
-                        whatsapp      : "(11) 91234-5678"
+                        nomeCompleto      : "Juliana Prado",
+                        tipoDocumento     : "cpf",
+                        documento         : "123.456.789-00",
+                        cidade            : "São Paulo",
+                        whatsapp          : "(11) 91234-5678",
+                        autorizaUsoImagem : false
                 ])))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath('$.contrato.statusAceite').value("aceito"))
@@ -145,6 +146,7 @@ class AceitePublicoSpec extends Specification {
         json.protocolo == "ACE-${LocalDate.now(FUSO).year}-0001"
         json.contrato.aceite.protocolo == json.protocolo
         json.contrato.aceite.hashConteudo != null
+        json.contrato.aceite.autorizaUsoImagem == false
         json.contrato.clienteId != null
         clienteRepository.count() == antes + 1
         clienteRepository.findById(json.contrato.clienteId as String).get().origem == ClienteOrigem.CONTRATO
@@ -384,11 +386,12 @@ class AceitePublicoSpec extends Specification {
 
     private static Map dadosAceite() {
         return [
-                nomeCompleto : "Juliana Prado",
-                tipoDocumento: "cpf",
-                documento    : "123.456.789-00",
-                cidade       : "São Paulo",
-                whatsapp     : "(11) 91234-5678"
+                nomeCompleto      : "Juliana Prado",
+                tipoDocumento     : "cpf",
+                documento         : "123.456.789-00",
+                cidade            : "São Paulo",
+                whatsapp          : "(11) 91234-5678",
+                autorizaUsoImagem : true
         ]
     }
 }

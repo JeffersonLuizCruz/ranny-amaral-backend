@@ -16,6 +16,7 @@ public record DadosAceite(
         String documento,
         String cidade,
         String whatsapp,
+        Boolean autorizaUsoImagem,
         Instant aceitoEm,
         String protocolo,
         String ip,

@@ -100,8 +100,8 @@ public class ContratoDemoSeeder implements ApplicationRunner {
                 .orElseGet(() -> modeloRepository.save(ModeloContrato.restaurar(
                         DadosDemo.MODELO_PADRAO,
                         "Contrato de Prestação de Serviços Fotográficos",
-                        "Modelo padrão para ensaios fotográficos, com cláusulas de entrega, direitos de imagem, pagamento, cancelamento e LGPD.",
-                        clausulas(),
+                        "Modelo baseado no contrato do CRM, com entrega, direitos de imagem, pagamento, cancelamento e LGPD.",
+                        ContratoBaseCrm.clausulas(),
                         true,
                         1)));
 
@@ -129,7 +129,7 @@ public class ContratoDemoSeeder implements ApplicationRunner {
                 modelo, new BigDecimal("590.00"), new BigDecimal("177.00"));
         DadosAceite aceite = new DadosAceite(
                 "Marina Alves", TipoDocumento.CPF, "529.982.247-25", "São Paulo",
-                "(11) 99876-5432", Instant.now().minus(2, ChronoUnit.DAYS),
+                "(11) 99876-5432", true, Instant.now().minus(2, ChronoUnit.DAYS),
                 "ACE-%d-0001".formatted(ano), "127.0.0.1", "Demo Photoizer CRM",
                 "demo-hash-aceite-familia");
         SolicitacaoAceite linkFamilia = SolicitacaoAceite.restaurar(
@@ -158,7 +158,7 @@ public class ContratoDemoSeeder implements ApplicationRunner {
                 null, clienteId, agendamentoId, pacoteId, modelo.getVersao());
         Instant emissao = Instant.now();
         ResolvedorClausulas.DadosResolucao dados = new ResolvedorClausulas.DadosResolucao(
-                numero, emissao, valorTotal, valorEntrada, new BigDecimal("30.00"),
+                numero, emissao, null, valorTotal, valorEntrada, new BigDecimal("30.00"),
                 valorTotal.subtract(valorEntrada), "Pix");
         List<ContratoClausula> resolvidas = resolvedor.resolver(modelo.getClausulas(), snapshot, dados);
         Contrato contrato = Contrato.criar(new DadosContrato(
@@ -168,38 +168,5 @@ public class ContratoDemoSeeder implements ApplicationRunner {
                 "Entrada na reserva; saldo no dia do ensaio, via Pix ou dinheiro, registrado pelo estúdio.",
                 emissao, null, null));
         return contrato;
-    }
-
-    private static List<ContratoClausula> clausulas() {
-        return List.of(
-                new ContratoClausula("cl-objeto", "1. Objeto",
-                        "O presente contrato tem por objeto a prestação de serviços fotográficos por {{estudio.nome}}, "
-                                + "inscrito no CNPJ {{estudio.cnpj}}, com sede em {{estudio.endereco}}, "
-                                + "{{estudio.cidade}}/{{estudio.estado}}, ao contratante {{cliente.nome}}, "
-                                + "WhatsApp {{cliente.whatsapp}} e e-mail {{cliente.email}}."),
-                new ContratoClausula("cl-servicos", "2. Serviços contratados e entregas",
-                        "O pacote contratado é {{pacote.nome}}, com duração de {{pacote.duracao}}, no valor de "
-                                + "{{pacote.valor}}. Estão inclusos: {{pacote.itens}}. O pacote inclui "
-                                + "{{pacote.fotosInclusas}} fotos e {{pacote.videosInclusos}} vídeos. A regra "
-                                + "para fotos adicionais é: {{pacote.regraFotoExtra}}. O ensaio ocorrerá em "
-                                + "{{agendamento.data}}, às {{agendamento.horario}}, em {{agendamento.local}}."),
-                new ContratoClausula("cl-imagem", "3. Direitos autorais e uso de imagem",
-                        "O contratante autoriza o uso das imagens para portfólio, site e redes sociais do "
-                                + "estúdio, salvo manifestação expressa em contrário por escrito."),
-                new ContratoClausula("cl-pagamento", "4. Valor e forma de pagamento",
-                        "O valor total do pacote é {{contrato.valorTotal}}. A entrada é de "
-                                + "{{contrato.valorEntrada}} ({{contrato.percentualEntrada}}), restando "
-                                + "{{contrato.saldoRestante}} para quitar até o dia do ensaio. O pagamento deve "
-                                + "ser feito via {{contrato.formaPagamento}}. Chave Pix: {{estudio.chavePix}}."),
-                new ContratoClausula("cl-cancelamento", "5. Cancelamento e remarcação",
-                        "Cancelamentos com mais de 7 dias de antecedência permitem remarcação sem custo, "
-                                + "sujeita à disponibilidade. Cancelamentos com menos de 7 dias podem implicar "
-                                + "retenção da entrada."),
-                new ContratoClausula("cl-lgpd", "6. Proteção de dados (LGPD)",
-                        "Os dados pessoais informados serão utilizados exclusivamente para execução deste "
-                                + "contrato, comunicação com o contratante e cumprimento de obrigações legais."),
-                new ContratoClausula("cl-gerais", "7. Disposições gerais",
-                        "Este contrato representa o acordo integral entre as partes. Fica eleito o foro de "
-                                + "{{estudio.foro}} para dirimir eventuais conflitos."));
     }
 }

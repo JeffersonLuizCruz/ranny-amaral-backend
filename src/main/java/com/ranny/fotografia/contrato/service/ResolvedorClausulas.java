@@ -37,6 +37,7 @@ public class ResolvedorClausulas {
     public record DadosResolucao(
             String numero,
             Instant dataEmissao,
+            Instant dataValidade,
             BigDecimal valorTotal,
             BigDecimal valorEntrada,
             BigDecimal percentualEntrada,
@@ -61,19 +62,28 @@ public class ResolvedorClausulas {
         ContratoSnapshot.EstudioSnapshot estudio = snapshot.estudio();
         if (estudio != null) {
             variaveis.put("estudio.nome", texto(estudio.nome()));
+            variaveis.put("estudio.razaoSocial", texto(estudio.razaoSocial()));
             variaveis.put("estudio.cnpj", texto(estudio.cnpj()));
             variaveis.put("estudio.endereco", texto(estudio.endereco()));
             variaveis.put("estudio.cidade", texto(estudio.cidade()));
             variaveis.put("estudio.estado", texto(estudio.estado()));
+            variaveis.put("estudio.email", texto(estudio.email()));
+            variaveis.put("estudio.telefone", texto(estudio.telefone()));
+            variaveis.put("estudio.responsavel", texto(estudio.responsavel()));
             variaveis.put("estudio.chavePix", texto(estudio.chavePix()));
             variaveis.put("estudio.instrucoesPagamento", texto(estudio.instrucoesPagamento()));
             variaveis.put("estudio.foro", texto(estudio.foro()));
+            variaveis.put("estudio.percentualEntradaPadrao",
+                    estudio.percentualEntradaPadrao() == null ? ""
+                            : texto(estudio.percentualEntradaPadrao()) + "%");
         }
         ContratoSnapshot.ClienteSnapshot cliente = snapshot.cliente();
         if (cliente != null) {
             variaveis.put("cliente.nome", texto(cliente.nome()));
             variaveis.put("cliente.whatsapp", texto(cliente.whatsapp()));
             variaveis.put("cliente.email", texto(cliente.email()));
+            variaveis.put("cliente.documento", texto(cliente.documento()));
+            variaveis.put("cliente.cidade", texto(cliente.cidade()));
         }
         ContratoSnapshot.PacoteSnapshot pacote = snapshot.pacote();
         if (pacote != null) {
@@ -94,6 +104,12 @@ public class ResolvedorClausulas {
             variaveis.put("agendamento.horario", HORA.format(dataHora));
             variaveis.put("agendamento.local", texto(agendamento.local()));
         }
+        if (agendamento != null) {
+            variaveis.put("agendamento.valor", moeda(agendamento.valorAcordado()));
+        }
+        variaveis.put("contrato.numero", texto(dados.numero()));
+        variaveis.put("contrato.dataEmissao", data(dados.dataEmissao()));
+        variaveis.put("contrato.validade", data(dados.dataValidade()));
         variaveis.put("contrato.valorTotal", moeda(dados.valorTotal()));
         variaveis.put("contrato.valorEntrada", moeda(dados.valorEntrada()));
         variaveis.put("contrato.percentualEntrada", texto(dados.percentualEntrada()) + "%");
@@ -154,6 +170,13 @@ public class ResolvedorClausulas {
 
     private static String moeda(BigDecimal valor) {
         return NumberFormat.getCurrencyInstance(BRASIL).format(valor == null ? BigDecimal.ZERO : valor);
+    }
+
+    private static String data(Instant valor) {
+        if (valor == null) {
+            return "";
+        }
+        return DATA.format(valor.atZone(FUSO));
     }
 
     private static String texto(Object valor) {
