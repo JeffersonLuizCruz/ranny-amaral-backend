@@ -30,5 +30,7 @@ public class StorageProperties {
     private int presignSeconds = 600;
     /** Downloads podem ficar abertos por mais tempo que o upload. */
     private int presignDownloadSeconds = 3600;
+    /** Previas publicas usam URLs curtas e inline. */
+    private int presignPreviewSeconds = 900;
     private long maxComprovanteBytes = 10L * 1024 * 1024;
 }

@@ -1690,8 +1690,11 @@ public class GaleriaService implements GaleriaConsulta {
         boolean temDerivadoEditado = false;
         if (midia.getTipo() == MidiaTipo.FOTO) {
             for (MidiaDerivado derivado : derivadoRepository.findByMidiaId(midia.getId())) {
-                String url = urlOuNull(derivado.getArquivoId(),
-                        ArquivoFinalidade.FOTO_DERIVADO, galeriaId);
+                String url = publico
+                        ? urlPreviewOuNull(derivado.getArquivoId(),
+                                ArquivoFinalidade.FOTO_DERIVADO, galeriaId)
+                        : urlOuNull(derivado.getArquivoId(),
+                                ArquivoFinalidade.FOTO_DERIVADO, galeriaId);
                 boolean editada = derivado.getOrigem() == MidiaDerivadoOrigem.EDITADA;
                 if (editada) {
                     temDerivadoEditado = true;
@@ -1724,14 +1727,23 @@ public class GaleriaService implements GaleriaConsulta {
             }
         }
 
-        // A previa publica usa sempre o derivado marcado; o download continua limpo.
+        // A previa publica usa sempre o derivado marcado; nunca cai para o limpo.
         String thumbLimpo = primeiroNaoNulo(thumbEditada, thumbOriginal);
         String webLimpo = primeiroNaoNulo(webEditada, webOriginal);
         String thumbMarcado = primeiroNaoNulo(thumbEditadaMarcada, thumbOriginalMarcada);
         String webMarcado = primeiroNaoNulo(webEditadaMarcada, webOriginalMarcada);
-        boolean previaMarcada = publico && thumbMarcado != null && webMarcado != null;
-        String thumbUrl = previaMarcada ? thumbMarcado : thumbLimpo;
-        String webUrl = previaMarcada ? webMarcado : webLimpo;
+        String thumbUrl;
+        String webUrl;
+        boolean previaMarcada;
+        if (publico) {
+            thumbUrl = primeiroNaoNulo(thumbMarcado, webMarcado);
+            webUrl = primeiroNaoNulo(webMarcado, thumbMarcado);
+            previaMarcada = thumbUrl != null && webUrl != null;
+        } else {
+            thumbUrl = thumbLimpo;
+            webUrl = webLimpo;
+            previaMarcada = false;
+        }
 
         String originalUrl = null;
         if (midia.getTipo() == MidiaTipo.VIDEO || exporOriginal) {
@@ -1845,6 +1857,14 @@ public class GaleriaService implements GaleriaConsulta {
     private String urlOuNull(String arquivoId, ArquivoFinalidade finalidade, String galeriaId) {
         try {
             return arquivoUpload.urlDownload(arquivoId, finalidade, galeriaId).url();
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private String urlPreviewOuNull(String arquivoId, ArquivoFinalidade finalidade, String galeriaId) {
+        try {
+            return arquivoUpload.urlPreview(arquivoId, finalidade, galeriaId).url();
         } catch (RuntimeException ex) {
             return null;
         }

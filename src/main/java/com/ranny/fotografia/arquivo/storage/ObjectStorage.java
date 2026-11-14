@@ -24,6 +24,9 @@ public interface ObjectStorage {
 
     String urlGet(String objectKey, String nomeArquivo, Duration validade);
 
+    /** URL curta para previa inline (sem forcar download). */
+    String urlGetInline(String objectKey, String nomeArquivo, Duration validade);
+
     byte[] ler(String objectKey);
 
     /** Abre um stream de leitura para downloads em lote (ex.: ZIP). */

@@ -73,6 +73,12 @@ public class FakeObjectStorage implements ObjectStorage {
     }
 
     @Override
+    public String urlGetInline(String objectKey, String nomeArquivo, Duration validade) {
+        return "http://fake-storage/%s?op=preview&filename=%s"
+                .formatted(objectKey, nomeArquivo == null ? "arquivo" : nomeArquivo);
+    }
+
+    @Override
     public byte[] ler(String objectKey) {
         return objetos.getOrDefault(objectKey, primeirosSimulados);
     }

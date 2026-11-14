@@ -31,6 +31,9 @@ public interface ArquivoUpload {
     /** Gera URL temporaria de leitura; o backend nao transporta os bytes. */
     UrlDownload urlDownload(String arquivoId, ArquivoFinalidade finalidade, String referenciaId);
 
+    /** Gera URL curta para previa inline (galeria publica). */
+    UrlDownload urlPreview(String arquivoId, ArquivoFinalidade finalidade, String referenciaId);
+
     /** Le o conteudo para processamento interno (ex.: gerar derivados). */
     byte[] abrirConteudo(String arquivoId, ArquivoFinalidade finalidade, String referenciaId);
 

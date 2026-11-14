@@ -139,14 +139,40 @@ public class S3ObjectStorage implements ObjectStorage {
         }
     }
 
+    @Override
+    public String urlGetInline(String objectKey, String nomeArquivo, Duration validade) {
+        try {
+            PresignedGetObjectRequest request = presigner.presignGetObject(
+                    GetObjectPresignRequest.builder()
+                            .signatureDuration(validade)
+                            .getObjectRequest(GetObjectRequest.builder()
+                                    .bucket(properties.getBucket())
+                                    .key(objectKey)
+                                    .responseContentDisposition(inlineContentDisposition(nomeArquivo))
+                                    .responseCacheControl("private, max-age=600, no-transform")
+                                    .build())
+                            .build());
+            return request.url().toString();
+        } catch (SdkException ex) {
+            throw new ArmazenamentoException("Falha ao assinar previa.", ex);
+        }
+    }
+
     private static String contentDisposition(String nomeArquivo) {
+        return "attachment; filename=\"" + nomeLimpo(nomeArquivo) + "\"";
+    }
+
+    private static String inlineContentDisposition(String nomeArquivo) {
+        return "inline; filename=\"" + nomeLimpo(nomeArquivo) + "\"";
+    }
+
+    private static String nomeLimpo(String nomeArquivo) {
         String nome = nomeArquivo == null || nomeArquivo.isBlank()
                 ? "arquivo" : nomeArquivo;
-        String limpo = nome.replace("\\", "_")
+        return nome.replace("\\", "_")
                 .replace("\"", "_")
                 .replace("\r", "_")
                 .replace("\n", "_");
-        return "attachment; filename=\"" + limpo + "\"";
     }
 
     @Override

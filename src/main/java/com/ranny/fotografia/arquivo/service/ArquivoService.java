@@ -243,6 +243,19 @@ public class ArquivoService implements ArquivoUpload {
                 Instant.now().plus(validade));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public UrlDownload urlPreview(String arquivoId, ArquivoFinalidade finalidade, String referenciaId) {
+        Arquivo arquivo = obter(arquivoId, finalidade, referenciaId);
+        if (!arquivo.estaDisponivel()) {
+            throw new RecursoNaoEncontradoException("Arquivo", arquivoId);
+        }
+        Duration validade = Duration.ofSeconds(properties.getPresignPreviewSeconds());
+        return new UrlDownload(storage.urlGetInline(arquivo.getObjectKey(),
+                        arquivo.getNomeOriginal(), validade),
+                Instant.now().plus(validade));
+    }
+
     private Arquivo obter(String arquivoId, ArquivoFinalidade finalidade, String referenciaId) {
         return repository.findByIdAndFinalidadeAndReferenciaId(arquivoId, finalidade, referenciaId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Arquivo", arquivoId));

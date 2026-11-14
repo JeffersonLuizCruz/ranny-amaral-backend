@@ -530,6 +530,8 @@ class GaleriaControllerSpec extends Specification {
         publica.midias[0].editadaUrl == null
         publica.midias[0].previaMarcada
         publica.midias[0].thumbUrl.contains('marca')
+        publica.midias[0].thumbUrl.contains('op=preview')
+        publica.midias[0].webUrl.contains('op=preview')
     }
 
     def "foto pronta na origem fica disponivel para download sem raw"() {
