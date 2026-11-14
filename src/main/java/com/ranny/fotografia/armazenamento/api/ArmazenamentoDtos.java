@@ -1,5 +1,9 @@
 package com.ranny.fotografia.armazenamento.api;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+
 import java.time.Instant;
 import java.util.List;
 
@@ -23,6 +27,7 @@ public final class ArmazenamentoDtos {
     public record ResumoResponse(
             Instant coletadoEm,
             String origemColeta,
+            String volumePath,
             Long totalBytes,
             Long livreBytes,
             Long usadoBytes,
@@ -33,6 +38,8 @@ public final class ArmazenamentoDtos {
             long reservaBytes,
             Long disponivelParaFotosBytes,
             Integer percentualUsado,
+            Integer percentualLimpeza,
+            Integer percentualAlvo,
             String alerta,
             Long diasRestantesEstimados,
             long galeriasElegiveis,
@@ -65,6 +72,23 @@ public final class ArmazenamentoDtos {
             long bytesSomenteStorage,
             List<String> amostraSomenteStorage,
             List<String> amostraSomenteCatalogo
+    ) {
+    }
+
+    public record LimpezaRequest(
+            @NotNull(message = "nao pode ser nulo")
+            @Min(value = 1, message = "deve ser maior que zero")
+            @Max(value = 100, message = "deve ser menor ou igual a 100")
+            Integer alvoPercentual
+    ) {
+    }
+
+    public record LimpezaResponse(
+            int galeriasAgendadas,
+            long bytesEstimados,
+            int percentualAntes,
+            int percentualDepoisEstimado,
+            boolean atingiuAlvo
     ) {
     }
 }

@@ -6,14 +6,18 @@ import com.ranny.fotografia.armazenamento.model.AmostraArmazenamento;
 import com.ranny.fotografia.armazenamento.repository.AmostraArmazenamentoRepository;
 import com.ranny.fotografia.arquivo.ArquivoConsulta;
 import com.ranny.fotografia.galeria.GaleriaConsulta;
+import com.ranny.fotografia.galeria.GaleriaLimpeza;
+import com.ranny.fotografia.shared.exception.RegraDeNegocioException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -32,17 +36,20 @@ public class ArmazenamentoService {
     private final ColetorArmazenamento coletor;
     private final ArquivoConsulta arquivoConsulta;
     private final GaleriaConsulta galeriaConsulta;
+    private final GaleriaLimpeza galeriaLimpeza;
     private final ArmazenamentoProperties properties;
 
     public ArmazenamentoService(AmostraArmazenamentoRepository repository,
                                 ColetorArmazenamento coletor,
                                 ArquivoConsulta arquivoConsulta,
                                 GaleriaConsulta galeriaConsulta,
+                                GaleriaLimpeza galeriaLimpeza,
                                 ArmazenamentoProperties properties) {
         this.repository = repository;
         this.coletor = coletor;
         this.arquivoConsulta = arquivoConsulta;
         this.galeriaConsulta = galeriaConsulta;
+        this.galeriaLimpeza = galeriaLimpeza;
         this.properties = properties;
     }
 
@@ -87,8 +94,70 @@ public class ArmazenamentoService {
     }
 
     @Transactional
-    public ArmazenamentoDtos.ReconciliacaoResponse reconciliar() {
-        List<ArquivoConsulta.ObjetoStorage> objetos = arquivoConsulta.listarObjetosComTamanho("");
+    public ArmazenamentoDtos.LimpezaResponse limparAte(int alvoPercentual) {
+        AmostraArmazenamento amostra = repository.findFirstByOrderByColetadoEmDesc()
+                .orElseGet(coletor::coletar);
+        Long total = amostra.getTotalBytes();
+        Long livre = amostra.getLivreBytes();
+        Long usado = amostra.getUsadoBytes();
+        if (total == null || total <= 0 || livre == null || usado == null) {
+            throw new RegraDeNegocioException("ARMAZENAMENTO_INDISPONIVEL",
+                    "Nao foi possivel medir o disco. Configure o volume do Garage no backend.");
+        }
+
+        int percentualAntes = percentual(usado, total);
+        long alvoLivre = (long) Math.ceil(total * (1 - alvoPercentual / 100.0));
+        if (livre >= alvoLivre) {
+            return new ArmazenamentoDtos.LimpezaResponse(
+                    0, 0, percentualAntes, percentualAntes, true);
+        }
+
+        List<GaleriaConsulta.ResumoArmazenamento> elegiveis = galeriaConsulta
+                .galeriasParaArmazenamento().stream()
+                .filter(GaleriaConsulta.ResumoArmazenamento::elegivel)
+                .toList();
+        List<String> ids = elegiveis.stream()
+                .map(GaleriaConsulta.ResumoArmazenamento::galeriaId)
+                .toList();
+        Map<String, ArquivoConsulta.TotaisReferencia> totais =
+                arquivoConsulta.totaisPorReferencia(ids);
+
+        List<GaleriaConsulta.ResumoArmazenamento> ordenadas = new ArrayList<>(elegiveis);
+        ordenadas.sort(Comparator.comparing(
+                GaleriaConsulta.ResumoArmazenamento::entregueEm,
+                Comparator.nullsLast(Comparator.naturalOrder())));
+
+        List<String> selecionadas = new ArrayList<>();
+        long bytesSelecionados = 0;
+        for (GaleriaConsulta.ResumoArmazenamento galeria : ordenadas) {
+            ArquivoConsulta.TotaisReferencia totalGaleria = totais.get(galeria.galeriaId());
+            long bytes = totalGaleria == null ? 0 : totalGaleria.totalBytes();
+            if (bytes <= 0) {
+                continue;
+            }
+            selecionadas.add(galeria.galeriaId());
+            bytesSelecionados += bytes;
+            if (livre + bytesSelecionados >= alvoLivre) {
+                break;
+            }
+        }
+
+        int agendadas = selecionadas.isEmpty() ? 0 : galeriaLimpeza.agendar(
+                selecionadas,
+                "Limpeza semiautomatica: disco em %d%%, alvo de %d%%."
+                        .formatted(percentualAntes, alvoPercentual));
+        long usadoDepois = Math.max(0, usado - bytesSelecionados);
+        int percentualDepois = percentual(usadoDepois, total);
+        return new ArmazenamentoDtos.LimpezaResponse(
+                agendadas,
+                bytesSelecionados,
+                percentualAntes,
+                percentualDepois,
+                livre + bytesSelecionados >= alvoLivre);
+    }
+
+    @Transactional
+    public ArmazenamentoDtos.ReconciliacaoResponse reconciliar() {        List<ArquivoConsulta.ObjetoStorage> objetos = arquivoConsulta.listarObjetosComTamanho("");
         Set<String> catalogo = new HashSet<>(arquivoConsulta.todasAsObjectKeys());
         Set<String> noStorage = new HashSet<>();
         List<String> amostraSomenteStorage = new ArrayList<>();
@@ -136,6 +205,7 @@ public class ArmazenamentoService {
         return new ArmazenamentoDtos.ResumoResponse(
                 amostra.getColetadoEm(),
                 amostra.getOrigemColeta().name(),
+                properties.getVolumePath(),
                 total,
                 livre,
                 usado,
@@ -146,6 +216,8 @@ public class ArmazenamentoService {
                 amostra.getReservaBytes(),
                 disponivel,
                 percentual,
+                properties.getPercentualLimpeza(),
+                properties.getPercentualAlvo(),
                 alerta,
                 diasRestantes(amostra),
                 elegiveis,
@@ -167,10 +239,20 @@ public class ArmazenamentoService {
         if (livre <= reserva) {
             return "CRITICO";
         }
+        if (percentual != null && percentual >= properties.getPercentualLimpeza()) {
+            return "LIMPEZA";
+        }
         if (percentual != null && percentual >= properties.getPercentualAlerta()) {
             return "ATENCAO";
         }
         return "OK";
+    }
+
+    private static int percentual(long usado, long total) {
+        if (total <= 0) {
+            return 0;
+        }
+        return (int) Math.round(usado * 100.0 / total);
     }
 
     private Long diasRestantes(AmostraArmazenamento amostra) {

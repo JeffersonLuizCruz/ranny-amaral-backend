@@ -77,6 +77,11 @@ class ArmazenamentoPermissaoSpec extends Specification {
         mockMvc.perform(post("/api/v1/armazenamento/coletar")
                 .header("Authorization", "Bearer " + token))
                 .andExpect(status().isForbidden())
+        mockMvc.perform(post("/api/v1/armazenamento/limpeza")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([alvoPercentual: 80])))
+                .andExpect(status().isForbidden())
     }
 
     def "admin passa pela autorizacao do expurgo"() {

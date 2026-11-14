@@ -50,6 +50,8 @@ public class ArmazenamentoHealthIndicator implements HealthIndicator {
         String alerta = "OK";
         if (livre <= properties.getReservaBytes()) {
             alerta = "CRITICO";
+        } else if (percentual >= properties.getPercentualLimpeza()) {
+            alerta = "LIMPEZA";
         } else if (percentual >= properties.getPercentualAlerta()) {
             alerta = "ATENCAO";
         }

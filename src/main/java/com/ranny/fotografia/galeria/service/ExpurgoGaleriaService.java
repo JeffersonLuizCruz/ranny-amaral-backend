@@ -2,6 +2,7 @@ package com.ranny.fotografia.galeria.service;
 
 import com.ranny.fotografia.arquivo.ArquivoConsulta;
 import com.ranny.fotografia.galeria.GaleriaConsulta;
+import com.ranny.fotografia.galeria.GaleriaLimpeza;
 import com.ranny.fotografia.galeria.api.ExpurgoDtos;
 import com.ranny.fotografia.galeria.event.ExpurgoSolicitadoEvent;
 import com.ranny.fotografia.galeria.model.EventoGaleria;
@@ -36,7 +37,7 @@ import java.util.Map;
  * permanecem intactos; apenas os objetos da midia saem do storage.
  */
 @Service
-public class ExpurgoGaleriaService {
+public class ExpurgoGaleriaService implements GaleriaLimpeza {
 
     private static final Logger log = LoggerFactory.getLogger(ExpurgoGaleriaService.class);
     private static final String CONFIRMACAO_PADRAO = "EXPURGAR";
@@ -155,9 +156,30 @@ public class ExpurgoGaleriaService {
                 arquivoConsulta.arquivosDaReferencia(galeriaId).size());
     }
 
+    @Override
     @Transactional
-    public void cancelar(String galeriaId) {
-        Galeria galeria = obter(galeriaId);
+    public int agendar(List<String> galeriaIds, String motivo) {
+        if (galeriaIds == null || galeriaIds.isEmpty()) {
+            return 0;
+        }
+        int agendadas = 0;
+        for (String galeriaId : galeriaIds) {
+            Galeria galeria = obter(galeriaId);
+            var resumo = galeriaService.resumoArmazenamento(galeriaId);
+            if (!resumo.elegivel()) {
+                continue;
+            }
+            galeria.solicitarExpurgo("Limpeza semiautomática", motivo);
+            evento(galeria, EventoGaleriaTipo.EXPURGO_SOLICITADO,
+                    "Expurgo agendado pela limpeza de armazenamento: %s".formatted(motivo));
+            eventos.publishEvent(new ExpurgoSolicitadoEvent(galeriaId));
+            agendadas++;
+        }
+        return agendadas;
+    }
+
+    @Transactional
+    public void cancelar(String galeriaId) {        Galeria galeria = obter(galeriaId);
         if (galeria.getExpurgoStatus() != ExpurgoStatus.AGENDADO) {
             throw new RegraDeNegocioException("EXPURGO_NAO_CANCELAVEL",
                     "So e possivel cancelar um expurgo agendado.");

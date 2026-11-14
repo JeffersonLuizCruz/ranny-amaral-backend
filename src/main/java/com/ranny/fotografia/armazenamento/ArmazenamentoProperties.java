@@ -27,6 +27,12 @@ public class ArmazenamentoProperties {
     /** Percentual de uso do disco que dispara alerta. */
     private int percentualAlerta = 85;
 
+    /** Percentual de uso que dispara a limpeza semiautomatica. */
+    private int percentualLimpeza = 90;
+
+    /** Alvo de uso depois da limpeza. */
+    private int percentualAlvo = 80;
+
     /** Liga a coleta periodica. */
     private boolean coletaHabilitada = true;
 

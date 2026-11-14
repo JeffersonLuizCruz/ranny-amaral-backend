@@ -87,7 +87,7 @@ class ArmazenamentoSpec extends Specification {
         resumo.livreBytes > 0
         resumo.percentualUsado >= 0
         resumo.percentualUsado <= 100
-        resumo.alerta in ["OK", "ATENCAO", "CRITICO"]
+        resumo.alerta in ["OK", "ATENCAO", "LIMPEZA", "CRITICO"]
 
         and: "o catalogo entrou no consumo do CRM"
         resumo.objetosBytes > 0

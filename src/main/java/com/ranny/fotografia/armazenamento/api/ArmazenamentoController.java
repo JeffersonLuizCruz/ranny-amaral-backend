@@ -4,9 +4,11 @@ import com.ranny.fotografia.armazenamento.service.ArmazenamentoService;
 import com.ranny.fotografia.armazenamento.service.ColetorArmazenamento;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -52,5 +54,12 @@ public class ArmazenamentoController {
     @Operation(summary = "Compara os objetos do bucket com o catalogo do banco")
     public ArmazenamentoDtos.ReconciliacaoResponse reconciliar() {
         return service.reconciliar();
+    }
+
+    @PostMapping("/limpeza")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Agenda expurgos das galerias elegiveis ate atingir o alvo de disco")
+    public ArmazenamentoDtos.LimpezaResponse limpar(@Valid @RequestBody ArmazenamentoDtos.LimpezaRequest request) {
+        return service.limparAte(request.alvoPercentual());
     }
 }
