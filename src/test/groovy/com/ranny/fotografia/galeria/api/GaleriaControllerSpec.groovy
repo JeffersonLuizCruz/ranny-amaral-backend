@@ -822,7 +822,9 @@ class GaleriaControllerSpec extends Specification {
 
         when:
         def antes = JsonCorpo.mapa(mockMvc.perform(
-                get("/api/v1/galerias").param("baixada", "true"))
+                get("/api/v1/galerias")
+                        .param("baixada", "true")
+                        .param("q", "Cliente Filtro Baixadas"))
                 .andExpect(status().isOk())
                 .andReturn())
         mockMvc.perform(
@@ -832,7 +834,9 @@ class GaleriaControllerSpec extends Specification {
                                 midiaId: preparado.midiaId, versao: "editada"])))
                 .andExpect(status().isOk())
         def aposIndividual = JsonCorpo.mapa(mockMvc.perform(
-                get("/api/v1/galerias").param("baixada", "true"))
+                get("/api/v1/galerias")
+                        .param("baixada", "true")
+                        .param("q", "Cliente Filtro Baixadas"))
                 .andExpect(status().isOk())
                 .andReturn())
         def detalheIndividual = JsonCorpo.mapa(mockMvc.perform(
@@ -843,11 +847,15 @@ class GaleriaControllerSpec extends Specification {
                 .param("versao", "editada"))
                 .andExpect(status().isOk())
         def aposZip = JsonCorpo.mapa(mockMvc.perform(
-                get("/api/v1/galerias").param("baixada", "true"))
+                get("/api/v1/galerias")
+                        .param("baixada", "true")
+                        .param("q", "Cliente Filtro Baixadas"))
                 .andExpect(status().isOk())
                 .andReturn())
         def semZip = JsonCorpo.mapa(mockMvc.perform(
-                get("/api/v1/galerias").param("baixada", "false"))
+                get("/api/v1/galerias")
+                        .param("baixada", "false")
+                        .param("q", "Cliente Filtro Baixadas"))
                 .andExpect(status().isOk())
                 .andReturn())
         def detalheZip = JsonCorpo.mapa(mockMvc.perform(
