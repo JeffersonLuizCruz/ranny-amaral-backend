@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
 
@@ -135,6 +136,13 @@ public class GlobalExceptionHandler {
                                                             HttpServletRequest request) {
         return resposta(HttpStatus.FORBIDDEN, "ACESSO_NEGADO",
                 "Acesso negado.", request, null);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ProblemDetail> tratarRecursoInexistente(NoResourceFoundException ex,
+                                                                  HttpServletRequest request) {
+        return resposta(HttpStatus.NOT_FOUND, "NAO_ENCONTRADO",
+                "Recurso nao encontrado.", request, null);
     }
 
     @ExceptionHandler(Exception.class)
