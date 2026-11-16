@@ -33,6 +33,17 @@ services:
     mem_limit: 1g
     expose:
       - "3900"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.ranny-garage-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.ranny-garage-http.entryPoints=http"
+      - "traefik.http.routers.ranny-garage-http.rule=Host(`arquivos.rannyamaralfotografia.digital`)"
+      - "traefik.http.routers.ranny-garage-http.middlewares=ranny-garage-redirect"
+      - "traefik.http.routers.ranny-garage-https.entryPoints=https"
+      - "traefik.http.routers.ranny-garage-https.rule=Host(`arquivos.rannyamaralfotografia.digital`)"
+      - "traefik.http.routers.ranny-garage-https.tls=true"
+      - "traefik.http.routers.ranny-garage-https.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ranny-garage.loadbalancer.server.port=3900"
     volumes:
       - /srv/ranny/garage/meta:/var/lib/garage/meta
       - /srv/ranny/garage/data:/var/lib/garage/data
