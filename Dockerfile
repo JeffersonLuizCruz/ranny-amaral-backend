@@ -13,7 +13,7 @@ WORKDIR /app
 
 # curl é necessário para o healthcheck do Coolify (imagem base não traz curl/wget)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl wget \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/target/*.jar app.jar
