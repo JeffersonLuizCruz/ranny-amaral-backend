@@ -1,10 +1,15 @@
-# Docker Compose do Garage para o Coolify 4.6.
+# Docker Compose do Garage para o Coolify 4.7.x (producao).
 #
 # Crie um recurso "Docker Compose" apontando para este arquivo (ou cole o
 # conteudo na UI) e defina as variaveis GARAGE_* como secrets.
 #
 # Depois, no Coolify, associe o dominio https://arquivos.<dominio> ao servico
 # `garage`, porta 3900. O `garage-init` roda uma vez para aplicar CORS/lifecycle.
+#
+# Volumes em bind mount no host (/srv/ranny/garage/{meta,data}) por dois motivos:
+# o backup com restic roda direto no host e o backend mede o disco real em
+# /var/lib/garage/data (tela de armazenamento). Criar os diretorios antes do deploy:
+#   mkdir -p /srv/ranny/garage/meta /srv/ranny/garage/data
 
 services:
   garage:
@@ -21,8 +26,8 @@ services:
       GARAGE_DEFAULT_BUCKET: crm-originais
       RUST_LOG: garage=info
     volumes:
-      - garage-meta:/var/lib/garage/meta
-      - garage-data:/var/lib/garage/data
+      - /srv/ranny/garage/meta:/var/lib/garage/meta
+      - /srv/ranny/garage/data:/var/lib/garage/data
       - type: bind
         source: ./garage.toml
         target: /etc/garage.toml
@@ -79,8 +84,8 @@ services:
           {
             "CORSRules": [{
               "AllowedOrigins": [
-                "https://www.rannyamaralfotografia.digital",
-                "https://rannyamaralfotografia.digital"
+                "https://app.rannyamaralfotografia.digital",
+                "https://www.rannyamaralfotografia.digital"
               ],
               "AllowedMethods": ["GET", "HEAD", "PUT", "POST"],
               "AllowedHeaders": ["*"],
@@ -107,7 +112,3 @@ services:
         until aws s3api head-bucket --bucket crm-originais 2>/dev/null; do sleep 1; done
         aws s3api put-bucket-cors --bucket crm-originais --cors-configuration file:///config/cors.json
         aws s3api put-bucket-lifecycle-configuration --bucket crm-originais --lifecycle-configuration file:///config/lifecycle.json
-
-volumes:
-  garage-meta:
-  garage-data:
