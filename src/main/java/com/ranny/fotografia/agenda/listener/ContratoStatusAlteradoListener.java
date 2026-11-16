@@ -2,6 +2,7 @@ package com.ranny.fotografia.agenda.listener;
 
 import com.ranny.fotografia.agenda.model.StatusAgendamento;
 import com.ranny.fotografia.agenda.repository.AgendamentoRepository;
+import com.ranny.fotografia.agenda.repository.BloqueioAgendaRepository;
 import com.ranny.fotografia.shared.events.ContratoStatusAlteradoEvent;
 import com.ranny.fotografia.shared.model.PagamentoEntrada;
 import com.ranny.fotografia.shared.model.PagamentoSaldo;
@@ -34,9 +35,12 @@ public class ContratoStatusAlteradoListener {
     private static final ZoneId FUSO_ESTUDIO = ZoneId.of("America/Sao_Paulo");
 
     private final AgendamentoRepository agendamentoRepository;
+    private final BloqueioAgendaRepository bloqueioAgendaRepository;
 
-    public ContratoStatusAlteradoListener(AgendamentoRepository agendamentoRepository) {
+    public ContratoStatusAlteradoListener(AgendamentoRepository agendamentoRepository,
+                                          BloqueioAgendaRepository bloqueioAgendaRepository) {
         this.agendamentoRepository = agendamentoRepository;
+        this.bloqueioAgendaRepository = bloqueioAgendaRepository;
     }
 
     @ApplicationModuleListener
@@ -55,6 +59,13 @@ public class ContratoStatusAlteradoListener {
                 agendamento.vincularContrato(evento.contratoId());
             }
             StatusAgendamento status = statusParaAgenda(evento);
+            if (agendamento.getStatus() == StatusAgendamento.CANCELADO
+                    && status != StatusAgendamento.CANCELADO
+                    && bloqueioAgendaRepository.existsByInicioLessThanAndFimGreaterThan(
+                            agendamento.getDataHoraFim(), agendamento.getDataHoraInicio())) {
+                log.warn("Agendamento {} nao reativado: horario bloqueado", agendamento.getId());
+                status = StatusAgendamento.CANCELADO;
+            }
             agendamento.sincronizarComContrato(status, entrada, saldo);
             agendamento.promoverParaRealizado(LocalDate.now(FUSO_ESTUDIO));
             log.debug("Agendamento {} sincronizado com contrato {} (status={})",

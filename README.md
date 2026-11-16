@@ -204,9 +204,26 @@ Resposta padrão:
 - Saldo final pago **antes** da data do ensaio apenas registra o pagamento; o status permanece `CONFIRMADO`.
 - Saldo final pago **na data ou depois**, com entrada e saldo quitados, promove o atendimento para `REALIZADO`.
 - Entrada que cobre 100% do pacote deixa o saldo isento e segue a mesma regra de data.
+- Bloqueios pontuais impedem criar ou remarcar ensaio no período (`422 HORARIO_BLOQUEADO`) e não
+  podem ser criados sobre ensaio ativo (ver “Bloqueios da agenda”).
 - Um job diário às `00:05` de `America/Sao_Paulo` promove para `REALIZADO` os atendimentos
   `CONFIRMADO` com data <= hoje e pagamentos quitados.
 - Reabrir o saldo final não reverte um atendimento já `REALIZADO`.
+
+## Bloqueios da agenda
+
+A equipe pode bloquear um **dia inteiro** ou um **intervalo pontual** (sem recorrência) para
+impedir novos ensaios. O bloqueio é simétrico:
+
+- ensaio sobre bloqueio → `422 HORARIO_BLOQUEADO` (na criação e na remarcação);
+- bloqueio sobre ensaio ativo → `422 BLOQUEIO_CONFLITA_COM_AGENDAMENTO`;
+- bloqueio sobreposto a outro bloqueio → `422 BLOQUEIO_SOBREPOSTO`;
+- ensaio `CANCELADO` não ocupa o horário e pode ser bloqueado.
+
+O intervalo é semiaberto `[início, fim)`: um ensaio que termina exatamente quando o bloqueio
+começa continua permitido. `diaInteiro=true` materializa 00:00 → 00:00 do dia seguinte em
+`America/Sao_Paulo`. A listagem usa o mesmo período obrigatório do calendário e retorna os
+bloqueios que intersectam o intervalo.
 
 ## Upload de comprovantes
 
@@ -330,6 +347,7 @@ bucket. O download do staff agora é protegido pelo JWT.
 | Clientes | `GET/POST /api/v1/clientes`, `GET/PUT/DELETE /api/v1/clientes/{id}` |
 | Pacotes | `GET/POST /api/v1/pacotes`, `GET/PUT/DELETE /api/v1/pacotes/{id}`, `PATCH /api/v1/pacotes/{id}/ativo` |
 | Agenda | `GET/POST /api/v1/agenda`, `GET /api/v1/agenda/calendario`, `GET/PUT/DELETE /api/v1/agenda/{id}`, `PATCH /{id}/status`, `PUT /{id}/pagamento-entrada`, `PUT /{id}/pagamento-final` |
+| Bloqueios da agenda | `GET/POST /api/v1/agenda/bloqueios`, `PUT/DELETE /api/v1/agenda/bloqueios/{id}` |
 | Contratos | `GET/POST /api/v1/contratos`, `GET/PUT/DELETE /{id}`, `GET /{id}/pagamento/comprovante/url`, `POST /{id}/duplicar`, `GET/POST /{id}/links-aceite`, `POST /{id}/links-aceite/{linkId}/cancelar`, `POST /{id}/reabrir`, `POST /{id}/cancelar` |
 | Pagamentos do contrato | `POST /{id}/pagamento/confirmar`, `POST /{id}/pagamento/rejeitar`, `POST /{id}/pagamento/isentar`, `PUT /{id}/pagamento-final`, `POST /{id}/pagamento-final/isentar`, `POST /{id}/pagamento-final/reabrir` |
 | Upload de comprovante | `POST /api/v1/public/contratos/{token}/comprovante/upload`, `POST .../upload/{arquivoId}/complete`, `POST .../upload/{arquivoId}/abort`, `GET .../upload/{arquivoId}/status` |

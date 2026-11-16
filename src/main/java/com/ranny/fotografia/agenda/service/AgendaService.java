@@ -11,6 +11,7 @@ import com.ranny.fotografia.agenda.model.ContatoReserva;
 import com.ranny.fotografia.agenda.model.PromocaoAplicada;
 import com.ranny.fotografia.agenda.model.StatusAgendamento;
 import com.ranny.fotografia.agenda.repository.AgendamentoRepository;
+import com.ranny.fotografia.agenda.repository.BloqueioAgendaRepository;
 import com.ranny.fotografia.cliente.ClienteConsulta;
 import com.ranny.fotografia.cliente.ClienteResumo;
 import com.ranny.fotografia.pacote.PacoteConsulta;
@@ -56,13 +57,16 @@ public class AgendaService implements AgendamentoConsulta {
     private static final ZoneId FUSO_ESTUDIO = ZoneId.of("America/Sao_Paulo");
 
     private final AgendamentoRepository agendamentoRepository;
+    private final BloqueioAgendaRepository bloqueioAgendaRepository;
     private final ClienteConsulta clienteConsulta;
     private final PacoteConsulta pacoteConsulta;
 
     public AgendaService(AgendamentoRepository agendamentoRepository,
+                         BloqueioAgendaRepository bloqueioAgendaRepository,
                          ClienteConsulta clienteConsulta,
                          PacoteConsulta pacoteConsulta) {
         this.agendamentoRepository = agendamentoRepository;
+        this.bloqueioAgendaRepository = bloqueioAgendaRepository;
         this.clienteConsulta = clienteConsulta;
         this.pacoteConsulta = pacoteConsulta;
     }
@@ -142,6 +146,12 @@ public class AgendaService implements AgendamentoConsulta {
         OffsetDateTime fim = request.dataHoraFim() != null
                 ? request.dataHoraFim()
                 : inicio.plusMinutes(pacote.duracaoMinutos());
+        StatusAgendamento status = request.status() == null
+                ? StatusAgendamento.RESERVADO
+                : request.status();
+        if (status != StatusAgendamento.CANCELADO) {
+            validarBloqueio(inicio, fim);
+        }
 
         Agendamento agendamento = Agendamento.criar(
                 cliente == null ? null : cliente.id(),
@@ -150,7 +160,7 @@ public class AgendaService implements AgendamentoConsulta {
                 inicio,
                 fim,
                 request.local().trim(),
-                request.status() == null ? StatusAgendamento.RESERVADO : request.status(),
+                status,
                 normalizar(request.observacoes()),
                 valorAcordado,
                 entrada,
@@ -202,6 +212,9 @@ public class AgendaService implements AgendamentoConsulta {
             }
             status = request.status();
         }
+        if (status != StatusAgendamento.CANCELADO) {
+            validarBloqueio(inicio, fim);
+        }
 
         agendamento.atualizar(
                 cliente == null ? agendamento.getClienteId() : cliente.id(),
@@ -223,6 +236,9 @@ public class AgendaService implements AgendamentoConsulta {
     @Transactional
     public AgendamentoResponse alterarStatus(String id, StatusAgendamento status) {
         Agendamento agendamento = obter(id);
+        if (status != StatusAgendamento.CANCELADO) {
+            validarBloqueio(agendamento.getDataHoraInicio(), agendamento.getDataHoraFim());
+        }
         agendamento.alterarStatus(status);
         return AgendamentoResponse.de(agendamento);
     }
@@ -366,6 +382,13 @@ public class AgendaService implements AgendamentoConsulta {
     private PacoteResumo obterPacote(String pacoteId) {
         return pacoteConsulta.buscar(pacoteId)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Pacote", pacoteId));
+    }
+
+    private void validarBloqueio(OffsetDateTime inicio, OffsetDateTime fim) {
+        if (bloqueioAgendaRepository.existsByInicioLessThanAndFimGreaterThan(fim, inicio)) {
+            throw new RegraDeNegocioException("HORARIO_BLOQUEADO",
+                    "Este horario esta bloqueado pela equipe. Escolha outro periodo.");
+        }
     }
 
     private ClienteResumo resolverCliente(String clienteId) {

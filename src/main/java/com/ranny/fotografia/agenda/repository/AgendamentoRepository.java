@@ -37,6 +37,10 @@ public interface AgendamentoRepository extends JpaRepository<Agendamento, String
 
     List<Agendamento> findByStatus(StatusAgendamento status);
 
+    /** Ensaios que intersectam o intervalo e nao estao no status informado. */
+    List<Agendamento> findByDataHoraInicioLessThanAndDataHoraFimGreaterThanAndStatusNotOrderByDataHoraInicioAsc(
+            OffsetDateTime fim, OffsetDateTime inicio, StatusAgendamento status);
+
     boolean existsByClienteId(String clienteId);
 
     boolean existsByPacoteId(String pacoteId);

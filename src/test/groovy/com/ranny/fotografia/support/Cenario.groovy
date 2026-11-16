@@ -1,10 +1,12 @@
 package com.ranny.fotografia.support
 
 import com.ranny.fotografia.agenda.model.Agendamento
+import com.ranny.fotografia.agenda.model.BloqueioAgenda
 import com.ranny.fotografia.agenda.model.CondicoesPacote
 import com.ranny.fotografia.agenda.model.ContatoReserva
 import com.ranny.fotografia.agenda.model.StatusAgendamento
 import com.ranny.fotografia.agenda.repository.AgendamentoRepository
+import com.ranny.fotografia.agenda.repository.BloqueioAgendaRepository
 import com.ranny.fotografia.cliente.model.Cliente
 import com.ranny.fotografia.cliente.model.ClienteOrigem
 import com.ranny.fotografia.cliente.repository.ClienteRepository
@@ -73,6 +75,14 @@ final class Cenario {
                 "Estúdio Teste", status, null,
                 pacote.valor, pacote.valor.multiply(new BigDecimal("0.30")).setScale(2),
                 new BigDecimal("30.00"), condicoes))
+    }
+
+    static BloqueioAgenda bloqueio(BloqueioAgendaRepository repository,
+                                   OffsetDateTime inicio,
+                                   OffsetDateTime fim,
+                                   boolean diaInteiro = false,
+                                   String motivo = "Indisponibilidade da equipe") {
+        return repository.save(BloqueioAgenda.criar(inicio, fim, diaInteiro, motivo))
     }
 
     static ModeloContrato modelo(ModeloContratoRepository repository) {
