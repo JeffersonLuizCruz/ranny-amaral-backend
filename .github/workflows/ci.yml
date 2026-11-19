@@ -101,6 +101,9 @@ jobs:
     needs: [test, integration]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    concurrency:
+      group: coolify-production-${{ github.repository }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -127,10 +130,47 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Deploy no Coolify
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        timeout-minutes: 15
         env:
-          COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_BACKEND_WEBHOOK }}
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_APP_UUID: ${{ secrets.COOLIFY_APP_UUID }}
         run: |
-          if [ -n "$COOLIFY_WEBHOOK" ]; then
-            curl -fsS -X POST "$COOLIFY_WEBHOOK"
+          set -euo pipefail
+
+          if [ -z "${COOLIFY_URL:-}" ] || [ -z "${COOLIFY_API_TOKEN:-}" ] || [ -z "${COOLIFY_APP_UUID:-}" ]; then
+            echo "Secrets do Coolify ausentes." >&2
+            exit 1
           fi
+
+          IMAGE_TAG="sha-${GITHUB_SHA::7}"
+
+          curl -fsS -X PATCH "$COOLIFY_URL/api/v1/applications/$COOLIFY_APP_UUID" \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"docker_registry_image_tag\":\"$IMAGE_TAG\"}"
+
+          RESPONSE="$(curl -fsS -X POST "$COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_APP_UUID" \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN")"
+          echo "$RESPONSE"
+
+          DEPLOYMENT_UUID="$(echo "$RESPONSE" | jq -r '.deployments[0].deployment_uuid')"
+          if [ -z "$DEPLOYMENT_UUID" ] || [ "$DEPLOYMENT_UUID" = "null" ]; then
+            echo "Coolify nao retornou deployment_uuid." >&2
+            exit 1
+          fi
+
+          for i in $(seq 1 60); do
+            STATUS="$(curl -fsS "$COOLIFY_URL/api/v1/deployments/$DEPLOYMENT_UUID" \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" | jq -r '.status')"
+            echo "Deploy $DEPLOYMENT_UUID: $STATUS"
+            case "$STATUS" in
+              finished|success) exit 0 ;;
+              failed|cancelled) exit 1 ;;
+            esac
+            sleep 10
+          done
+
+          echo "Timeout aguardando deploy." >&2
+          exit 1
