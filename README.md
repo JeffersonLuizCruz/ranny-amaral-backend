@@ -313,7 +313,7 @@ bucket. O download do staff agora é protegido pelo JWT.
 - Regras:
   - ensaio realizado e pagamentos quitados para publicar a seleção;
   - fotos selecionadas ≥ fotos inclusas;
-  - vídeos exatamente iguais aos inclusos;
+  - vídeos até a quantidade inclusa (opcional, sem abatimento no pacote);
   - fotos extras geram pedido de extras;
   - reenvio com menos extras do que o já pago é bloqueado;
   - confirmação Pix dos extras exige comprovante;

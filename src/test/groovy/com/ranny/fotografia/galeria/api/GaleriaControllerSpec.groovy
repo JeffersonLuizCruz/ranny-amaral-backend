@@ -119,6 +119,67 @@ class GaleriaControllerSpec extends Specification {
         JsonCorpo.mapa(resultado).codigo == "SALDO_PENDENTE"
     }
 
+    def "publica selecao sem video mesmo com video incluso no pacote"() {
+        given:
+        def preparado = criarGaleriaComFoto("Cliente Sem Video", "edicao", 1, 1)
+
+        when:
+        def link = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/selecao/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def publico = JsonCorpo.mapa(mockMvc.perform(
+                get("/api/v1/public/galerias/${link.token}"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def selecao = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/public/galerias/${link.token}/selecao")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                fotoIds : [preparado.midiaId],
+                                videoIds: []])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        publico.galeria.videosInclusos == 1
+        selecao.fotosSelecionadas == 1
+        selecao.videosSelecionados == 0
+    }
+
+    def "aceita ate o limite de videos inclusos e rejeita excesso"() {
+        given:
+        def preparado = criarGaleriaComFoto("Cliente Video Opcional", "edicao", 1, 1)
+        def video1 = enviarVideo(preparado.galeriaId, "video-1.mp4", "0000ftypisom-video-1".bytes)
+        def video2 = enviarVideo(preparado.galeriaId, "video-2.mp4", "0000ftypisom-video-2".bytes)
+        def link = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${preparado.galeriaId}/selecao/publicar"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        when:
+        def excesso = mockMvc.perform(
+                post("/api/v1/public/galerias/${link.token}/selecao")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                fotoIds : [preparado.midiaId],
+                                videoIds: [video1, video2]])))
+                .andReturn()
+        def aceita = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/public/galerias/${link.token}/selecao")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JsonCorpo.json([
+                                fotoIds : [preparado.midiaId],
+                                videoIds: [video1]])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        then:
+        excesso.response.status == 422
+        JsonCorpo.mapa(excesso).codigo == "VIDEOS_INVALIDOS"
+        aceita.videosSelecionados == 1
+    }
+
     def "fluxo completo de galeria: upload, selecao e entrega"() {
         given:
         def cliente = Cenario.cliente(clienteRepository, "Marina Galeria")
@@ -1422,10 +1483,10 @@ class GaleriaControllerSpec extends Specification {
     }
 
     private Map criarGaleriaComFoto(String nomeCliente, String finalidade = "edicao",
-                                    int fotosInclusas = 1) {
+                                    int fotosInclusas = 1, int videosInclusos = 0) {
         def cliente = Cenario.cliente(clienteRepository, nomeCliente)
         def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"),
-                fotosInclusas, 0, new BigDecimal("50.00"), null, List.of())
+                fotosInclusas, videosInclusos, new BigDecimal("50.00"), null, List.of())
         def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
                 Cenario.amanhaAsDez(), StatusAgendamento.REALIZADO)
         agendamento.atualizarPagamentoEntrada(

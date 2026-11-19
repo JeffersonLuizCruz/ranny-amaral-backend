@@ -542,9 +542,9 @@ public class GaleriaService implements GaleriaConsulta {
             throw new RegraDeNegocioException("FOTOS_INSUFICIENTES",
                     "Selecione todas as %d fotos inclusas no pacote.".formatted(galeria.getFotosInclusas()));
         }
-        if (videos.size() != galeria.getVideosInclusos()) {
+        if (videos.size() > galeria.getVideosInclusos()) {
             throw new RegraDeNegocioException("VIDEOS_INVALIDOS",
-                    "Selecione exatamente %d video(s) incluso(s).".formatted(galeria.getVideosInclusos()));
+                    "Selecione no maximo %d video(s) incluso(s).".formatted(galeria.getVideosInclusos()));
         }
 
         validarMidiasEntregues(galeria, fotos, videos);
@@ -1583,17 +1583,10 @@ public class GaleriaService implements GaleriaConsulta {
         }
         long fotos = midiaRepository.countByGaleriaIdAndTipoAndStatus(
                 galeria.getId(), MidiaTipo.FOTO, MidiaStatus.DISPONIVEL);
-        long videos = midiaRepository.countByGaleriaIdAndTipoAndStatus(
-                galeria.getId(), MidiaTipo.VIDEO, MidiaStatus.DISPONIVEL);
         if (fotos < galeria.getFotosInclusas()) {
             throw new RegraDeNegocioException("FOTOS_INSUFICIENTES",
                     "Envie pelo menos %d fotos (%,d disponiveis)."
                             .formatted(galeria.getFotosInclusas(), fotos));
-        }
-        if (videos < galeria.getVideosInclusos()) {
-            throw new RegraDeNegocioException("VIDEOS_INSUFICIENTES",
-                    "Envie pelo menos %d videos (%,d disponiveis)."
-                            .formatted(galeria.getVideosInclusos(), videos));
         }
     }
 
