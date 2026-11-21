@@ -5,6 +5,7 @@ import com.ranny.fotografia.agenda.model.BloqueioAgenda
 import com.ranny.fotografia.agenda.model.CondicoesPacote
 import com.ranny.fotografia.agenda.model.ContatoReserva
 import com.ranny.fotografia.agenda.model.StatusAgendamento
+import com.ranny.fotografia.agenda.model.TaxaDeslocamento
 import com.ranny.fotografia.agenda.repository.AgendamentoRepository
 import com.ranny.fotografia.agenda.repository.BloqueioAgendaRepository
 import com.ranny.fotografia.cliente.model.Cliente
@@ -63,18 +64,20 @@ final class Cenario {
                                    Cliente cliente,
                                    Pacote pacote,
                                    OffsetDateTime inicio = amanhaAsDez(),
-                                   StatusAgendamento status = StatusAgendamento.RESERVADO) {
+                                   StatusAgendamento status = StatusAgendamento.RESERVADO,
+                                   TaxaDeslocamento taxaDeslocamento = TaxaDeslocamento.nenhuma()) {
         ContatoReserva contato = cliente == null
                 ? ContatoReserva.de("Juliana Prado", "(11) 91234-5678")
                 : ContatoReserva.de(cliente.nome, cliente.whatsapp)
         CondicoesPacote condicoes = CondicoesPacote.de(
                 pacote.quantidadeFotosInclusas, pacote.quantidadeVideosInclusos,
                 pacote.valorFotoExtra, pacote.valor, pacote.faixasFotoExtraSnapshot(), null)
+        BigDecimal valorAcordado = pacote.valor.add(taxaDeslocamento.valorCobrado())
         return repository.save(Agendamento.criar(
                 cliente?.id, contato, pacote.id, inicio, inicio.plusMinutes(pacote.duracaoMinutos),
                 "Estúdio Teste", status, null,
-                pacote.valor, pacote.valor.multiply(new BigDecimal("0.30")).setScale(2),
-                new BigDecimal("30.00"), condicoes))
+                valorAcordado, valorAcordado.multiply(new BigDecimal("0.30")).setScale(2),
+                new BigDecimal("30.00"), condicoes, taxaDeslocamento))
     }
 
     static BloqueioAgenda bloqueio(BloqueioAgendaRepository repository,

@@ -76,6 +76,133 @@ class AgendaControllerSpec extends Specification {
         JsonCorpo.mapa(resultado).id
     }
 
+    def "soma a taxa de deslocamento repassada e calcula a entrada sobre o total"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository)
+        def pacote = Cenario.pacote(pacoteRepository, "Ensaio", new BigDecimal("200.00"))
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/agenda")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        clienteId               : cliente.id,
+                        pacoteId                : pacote.id,
+                        dataHoraInicio          : "2026-12-10T10:00:00-03:00",
+                        local                   : "Estúdio Teste",
+                        taxaDeslocamento        : 50.00,
+                        repassarTaxaDeslocamento: true,
+                        percentualEntrada       : 30.00
+                ])))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath('$.valorAcordado').value(250.0d))
+                .andExpect(jsonPath('$.valorEntrada').value(75.0d))
+                .andExpect(jsonPath('$.saldoRestante').value(175.0d))
+                .andExpect(jsonPath('$.taxaDeslocamento').value(50.0d))
+                .andExpect(jsonPath('$.taxaDeslocamentoRepassada').value(true))
+                .andReturn()
+
+        then:
+        JsonCorpo.mapa(resultado).valorAcordado == 250.0d
+    }
+
+    def "absorve a taxa de deslocamento sem alterar o total do pacote"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository)
+        def pacote = Cenario.pacote(pacoteRepository, "Ensaio", new BigDecimal("200.00"))
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/agenda")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        clienteId               : cliente.id,
+                        pacoteId                : pacote.id,
+                        dataHoraInicio          : "2026-12-10T10:00:00-03:00",
+                        local                   : "Estúdio Teste",
+                        taxaDeslocamento        : 50.00,
+                        repassarTaxaDeslocamento: false,
+                        percentualEntrada       : 30.00
+                ])))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath('$.valorAcordado').value(200.0d))
+                .andExpect(jsonPath('$.valorEntrada').value(60.0d))
+                .andExpect(jsonPath('$.saldoRestante').value(140.0d))
+                .andExpect(jsonPath('$.taxaDeslocamento').value(50.0d))
+                .andExpect(jsonPath('$.taxaDeslocamentoRepassada').value(false))
+                .andReturn()
+
+        then:
+        JsonCorpo.mapa(resultado).taxaDeslocamento == 50.0d
+    }
+
+    def "ajusta apenas a parcela do deslocamento ao editar sem reenviar o total"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository)
+        def pacote = Cenario.pacote(pacoteRepository)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote)
+
+        when:
+        def repassado = mockMvc.perform(put("/api/v1/agenda/${agendamento.id}")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        clienteId               : cliente.id,
+                        pacoteId                : pacote.id,
+                        dataHoraInicio          : agendamento.dataHoraInicio.toString(),
+                        dataHoraFim             : agendamento.dataHoraFim.toString(),
+                        local                   : "Estúdio Teste",
+                        taxaDeslocamento        : 50.00,
+                        repassarTaxaDeslocamento: true
+                ])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.valorAcordado').value(1050.0d))
+                .andExpect(jsonPath('$.valorEntrada').value(315.0d))
+                .andExpect(jsonPath('$.saldoRestante').value(735.0d))
+                .andReturn()
+
+        def absorvido = mockMvc.perform(put("/api/v1/agenda/${agendamento.id}")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        clienteId               : cliente.id,
+                        pacoteId                : pacote.id,
+                        dataHoraInicio          : agendamento.dataHoraInicio.toString(),
+                        dataHoraFim             : agendamento.dataHoraFim.toString(),
+                        local                   : "Estúdio Teste",
+                        taxaDeslocamento        : 50.00,
+                        repassarTaxaDeslocamento: false
+                ])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.valorAcordado').value(1000.0d))
+                .andReturn()
+
+        then:
+        JsonCorpo.mapa(repassado).valorAcordado == 1050.0d
+        JsonCorpo.mapa(absorvido).valorAcordado == 1000.0d
+    }
+
+    def "rejeita total menor que a taxa de deslocamento repassada"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository)
+        def pacote = Cenario.pacote(pacoteRepository, "Ensaio", new BigDecimal("200.00"))
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/agenda")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        clienteId               : cliente.id,
+                        pacoteId                : pacote.id,
+                        dataHoraInicio          : "2026-12-10T10:00:00-03:00",
+                        local                   : "Estúdio Teste",
+                        valorAcordado           : 40.00,
+                        taxaDeslocamento        : 50.00,
+                        repassarTaxaDeslocamento: true,
+                        percentualEntrada       : 30.00
+                ])))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "DESLOCAMENTO_MAIOR_QUE_TOTAL"
+    }
+
     def "respeita a decisao de nao aplicar a promocao no agendamento"() {
         given:
         def cliente = Cenario.cliente(clienteRepository)

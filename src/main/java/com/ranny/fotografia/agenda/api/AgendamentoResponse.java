@@ -53,7 +53,9 @@ public record AgendamentoResponse(
         boolean saldoQuitado,
         boolean quitado,
         BigDecimal valorRecebido,
-        BigDecimal valorPendente
+        BigDecimal valorPendente,
+        BigDecimal taxaDeslocamento,
+        boolean taxaDeslocamentoRepassada
 ) {
 
     public static AgendamentoResponse de(Agendamento agendamento) {
@@ -90,7 +92,9 @@ public record AgendamentoResponse(
                 resumo.saldoQuitado(),
                 resumo.quitado(),
                 resumo.valorRecebido(),
-                resumo.valorPendente()
+                resumo.valorPendente(),
+                agendamento.getTaxaDeslocamento().getValor(),
+                agendamento.getTaxaDeslocamento().isRepassada()
         );
     }
 

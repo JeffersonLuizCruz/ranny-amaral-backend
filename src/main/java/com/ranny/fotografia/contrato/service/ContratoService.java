@@ -347,6 +347,12 @@ public class ContratoService implements ContratoConsulta {
         BigDecimal valorTotal = request.valorTotal() != null
                 ? CalculadoraPagamento.normalizar(request.valorTotal())
                 : resolverValorTotal(request.agendamentoId(), pacoteId, agora);
+        if (snapshot.deslocamento() != null && snapshot.deslocamento().repassado()
+                && snapshot.deslocamento().valor() != null
+                && valorTotal.compareTo(snapshot.deslocamento().valor()) < 0) {
+            throw new RegraDeNegocioException("DESLOCAMENTO_MAIOR_QUE_TOTAL",
+                    "O valor total nao pode ser menor que a taxa de deslocamento repassada.");
+        }
 
         BigDecimal percentual;
         BigDecimal entrada;

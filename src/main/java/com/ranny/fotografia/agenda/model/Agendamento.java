@@ -102,6 +102,9 @@ public class Agendamento {
     @Embedded
     private CondicoesPacote condicoesPacote;
 
+    @Embedded
+    private TaxaDeslocamento taxaDeslocamento;
+
     @Column(name = "galeria_id", length = 64)
     private String galeriaId;
 
@@ -112,12 +115,13 @@ public class Agendamento {
                                     OffsetDateTime inicio, OffsetDateTime fim, String local,
                                     StatusAgendamento status, String observacoes,
                                     BigDecimal valorAcordado, BigDecimal valorEntrada,
-                                    BigDecimal percentualEntrada, CondicoesPacote condicoes) {
+                                    BigDecimal percentualEntrada, CondicoesPacote condicoes,
+                                    TaxaDeslocamento taxaDeslocamento) {
         Agendamento agendamento = new Agendamento();
         agendamento.id = UUID.randomUUID().toString();
         agendamento.auditoria = Auditoria.iniciar();
         agendamento.aplicar(clienteId, contato, pacoteId, inicio, fim, local, status, observacoes,
-                valorAcordado, valorEntrada, percentualEntrada, condicoes);
+                valorAcordado, valorEntrada, percentualEntrada, condicoes, taxaDeslocamento);
         agendamento.recalcularPagamentos();
         return agendamento;
     }
@@ -128,12 +132,12 @@ public class Agendamento {
                                         OffsetDateTime fim, String local, StatusAgendamento status,
                                         String observacoes, BigDecimal valorAcordado,
                                         BigDecimal valorEntrada, BigDecimal percentualEntrada,
-                                        CondicoesPacote condicoes) {
+                                        CondicoesPacote condicoes, TaxaDeslocamento taxaDeslocamento) {
         Agendamento agendamento = new Agendamento();
         agendamento.id = id;
         agendamento.auditoria = Auditoria.iniciar();
         agendamento.aplicar(clienteId, contato, pacoteId, inicio, fim, local, status, observacoes,
-                valorAcordado, valorEntrada, percentualEntrada, condicoes);
+                valorAcordado, valorEntrada, percentualEntrada, condicoes, taxaDeslocamento);
         agendamento.contratoId = contratoId;
         agendamento.recalcularPagamentos();
         return agendamento;
@@ -143,11 +147,13 @@ public class Agendamento {
                           OffsetDateTime inicio, OffsetDateTime fim, String local,
                           StatusAgendamento status, String observacoes,
                           BigDecimal valorAcordado, BigDecimal valorEntrada,
-                          BigDecimal percentualEntrada, CondicoesPacote condicoes) {
+                          BigDecimal percentualEntrada, CondicoesPacote condicoes,
+                          TaxaDeslocamento taxaDeslocamento) {
         boolean pacoteMudou = !this.pacoteId.equals(pacoteId);
         aplicar(clienteId, contato, pacoteId, inicio, fim, local, status, observacoes,
                 valorAcordado, valorEntrada, percentualEntrada,
-                pacoteMudou || this.condicoesPacote == null ? condicoes : this.condicoesPacote);
+                pacoteMudou || this.condicoesPacote == null ? condicoes : this.condicoesPacote,
+                taxaDeslocamento);
         recalcularPagamentos();
         auditoria.marcarAtualizacao();
     }
@@ -160,6 +166,11 @@ public class Agendamento {
         }
         this.status = novoStatus;
         auditoria.marcarAtualizacao();
+    }
+
+    /** Nunca nulo: agendamentos anteriores a coluna sao lidos como taxa zero. */
+    public TaxaDeslocamento getTaxaDeslocamento() {
+        return taxaDeslocamento == null ? TaxaDeslocamento.nenhuma() : taxaDeslocamento;
     }
 
     public boolean entradaQuitada() {
@@ -265,7 +276,7 @@ public class Agendamento {
                          OffsetDateTime inicio, OffsetDateTime fim, String local,
                          StatusAgendamento status, String observacoes, BigDecimal valorAcordado,
                          BigDecimal valorEntrada, BigDecimal percentualEntrada,
-                         CondicoesPacote condicoes) {
+                         CondicoesPacote condicoes, TaxaDeslocamento taxaDeslocamento) {
         this.clienteId = clienteId;
         this.contato = contato;
         this.pacoteId = pacoteId;
@@ -278,6 +289,14 @@ public class Agendamento {
         this.valorEntrada = CalculadoraPagamento.normalizar(valorEntrada);
         this.percentualEntrada = CalculadoraPagamento.normalizar(percentualEntrada);
         this.condicoesPacote = condicoes;
+        this.taxaDeslocamento = taxaDeslocamento == null
+                ? TaxaDeslocamento.nenhuma()
+                : taxaDeslocamento;
+        if (this.taxaDeslocamento.isRepassada()
+                && this.valorAcordado.compareTo(this.taxaDeslocamento.getValor()) < 0) {
+            throw new RegraDeNegocioException("DESLOCAMENTO_MAIOR_QUE_TOTAL",
+                    "O valor total nao pode ser menor que a taxa de deslocamento repassada.");
+        }
     }
 
     /**

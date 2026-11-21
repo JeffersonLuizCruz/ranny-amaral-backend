@@ -1,5 +1,6 @@
 package com.ranny.fotografia.contrato.api
 
+import com.ranny.fotografia.agenda.model.TaxaDeslocamento
 import com.ranny.fotografia.agenda.repository.AgendamentoRepository
 import com.ranny.fotografia.cliente.model.Cliente
 import com.ranny.fotografia.cliente.repository.ClienteRepository
@@ -101,6 +102,65 @@ class ContratoControllerSpec extends Specification {
         json.clausulas[0].corpo.contains("R\$")
         json.clausulasModelo[0].corpo.contains("{{cliente.nome}}")
         json.historico[0].tipo == "criado"
+    }
+
+    def "congela deslocamento repassado no snapshot e insere clausula de sistema"() {
+        given:
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), com.ranny.fotografia.agenda.model.StatusAgendamento.RESERVADO,
+                TaxaDeslocamento.de(new BigDecimal("50.00"), true))
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/contratos")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        modeloId         : modelo.id,
+                        agendamentoId    : agendamento.id,
+                        percentualEntrada: 30.00
+                ])))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath('$.valorTotal').value(1050.0d))
+                .andExpect(jsonPath('$.valorEntrada').value(315.0d))
+                .andExpect(jsonPath('$.saldoRestante').value(735.0d))
+                .andExpect(jsonPath('$.snapshot.deslocamento.valor').value(50.0d))
+                .andExpect(jsonPath('$.snapshot.deslocamento.repassado').value(true))
+                .andExpect(jsonPath('$.snapshot.deslocamento.valorCobrado').value(50.0d))
+                .andExpect(jsonPath('$.snapshot.deslocamento.valorAbsorvido').value(0.0d))
+                .andReturn()
+
+        then:
+        def json = JsonCorpo.mapa(resultado)
+        def clausula = json.clausulas.find { it.id == "cl-deslocamento-sistema" }
+        clausula != null
+        clausula.corpo.contains("50,00")
+        clausula.corpo.contains("1.050,00")
+    }
+
+    def "registra deslocamento absorvido sem clausula no contrato"() {
+        given:
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), com.ranny.fotografia.agenda.model.StatusAgendamento.RESERVADO,
+                TaxaDeslocamento.de(new BigDecimal("50.00"), false))
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/contratos")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        modeloId         : modelo.id,
+                        agendamentoId    : agendamento.id,
+                        percentualEntrada: 30.00
+                ])))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath('$.valorTotal').value(1000.0d))
+                .andExpect(jsonPath('$.snapshot.deslocamento.valor').value(50.0d))
+                .andExpect(jsonPath('$.snapshot.deslocamento.repassado').value(false))
+                .andExpect(jsonPath('$.snapshot.deslocamento.valorCobrado').value(0.0d))
+                .andExpect(jsonPath('$.snapshot.deslocamento.valorAbsorvido').value(50.0d))
+                .andReturn()
+
+        then:
+        def json = JsonCorpo.mapa(resultado)
+        json.clausulas.every { !it.id.contains("deslocamento") }
     }
 
     def "numera contratos sequencialmente por ano"() {

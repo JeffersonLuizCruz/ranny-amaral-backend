@@ -57,6 +57,17 @@ class PostgresSchemaIT {
     }
 
     @Test
+    void aplicaTaxaDeDeslocamentoNoAgendamento() {
+        Integer colunas = jdbcTemplate.queryForObject("""
+                select count(*) from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = 'agendamentos'
+                  and column_name in ('taxa_deslocamento', 'taxa_deslocamento_repassada')
+                """, Integer.class);
+        assertThat(colunas).isEqualTo(2);
+    }
+
+    @Test
     void aplicaFaixasProgressivasDeFotoExtra() {
         Integer colunas = jdbcTemplate.queryForObject("""
                 select count(*) from information_schema.columns

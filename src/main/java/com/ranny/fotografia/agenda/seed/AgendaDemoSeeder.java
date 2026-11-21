@@ -4,6 +4,7 @@ import com.ranny.fotografia.agenda.model.Agendamento;
 import com.ranny.fotografia.agenda.model.CondicoesPacote;
 import com.ranny.fotografia.agenda.model.ContatoReserva;
 import com.ranny.fotografia.agenda.model.StatusAgendamento;
+import com.ranny.fotografia.agenda.model.TaxaDeslocamento;
 import com.ranny.fotografia.agenda.repository.AgendamentoRepository;
 import com.ranny.fotografia.shared.model.FormaPagamentoSaldo;
 import com.ranny.fotografia.shared.model.PagamentoSaldo;
@@ -57,7 +58,8 @@ public class AgendaDemoSeeder implements ApplicationRunner {
                 StatusAgendamento.RESERVADO,
                 "Levar looks neutros. Confirmar horário no dia anterior.",
                 new BigDecimal("890.00"), new BigDecimal("267.00"), new BigDecimal("30.00"),
-                CondicoesPacote.de(20, 0, new BigDecimal("45.00"), new BigDecimal("890.00"), null));
+                CondicoesPacote.de(20, 0, new BigDecimal("45.00"), new BigDecimal("890.00"), null),
+                TaxaDeslocamento.nenhuma());
 
         Agendamento corporativo = Agendamento.restaurar(
                 DadosDemo.AGENDAMENTO_CORPORATIVO,
@@ -70,8 +72,9 @@ public class AgendaDemoSeeder implements ApplicationRunner {
                 "Escritório do cliente",
                 StatusAgendamento.RESERVADO,
                 "Reserva criada sem cliente. Contrato em rascunho aguardando envio.",
-                new BigDecimal("1490.00"), new BigDecimal("447.00"), new BigDecimal("30.00"),
-                CondicoesPacote.de(40, 1, new BigDecimal("55.00"), new BigDecimal("1490.00"), null));
+                new BigDecimal("1540.00"), new BigDecimal("462.00"), new BigDecimal("30.00"),
+                CondicoesPacote.de(40, 1, new BigDecimal("55.00"), new BigDecimal("1490.00"), null),
+                TaxaDeslocamento.de(new BigDecimal("50.00"), true));
 
         Agendamento familia = Agendamento.restaurar(
                 DadosDemo.AGENDAMENTO_FAMILIA,
@@ -85,7 +88,8 @@ public class AgendaDemoSeeder implements ApplicationRunner {
                 StatusAgendamento.REALIZADO,
                 "Ensaio realizado. Saldo final recebido em dinheiro.",
                 new BigDecimal("590.00"), new BigDecimal("177.00"), new BigDecimal("30.00"),
-                CondicoesPacote.de(15, 0, new BigDecimal("35.00"), new BigDecimal("590.00"), null));
+                CondicoesPacote.de(15, 0, new BigDecimal("35.00"), new BigDecimal("590.00"), null),
+                TaxaDeslocamento.nenhuma());
         familia.getPagamentoEntrada().confirmar(Instant.now().minus(3, ChronoUnit.DAYS), "Equipe Photoizer");
         familia.atualizarPagamentoFinal(PagamentoSaldo.recebido(
                 new BigDecimal("413.00"), FormaPagamentoSaldo.DINHEIRO,

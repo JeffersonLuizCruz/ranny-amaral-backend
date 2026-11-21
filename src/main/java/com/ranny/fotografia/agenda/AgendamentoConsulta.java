@@ -45,7 +45,9 @@ public interface AgendamentoConsulta {
             boolean quitado,
             BigDecimal valorRecebido,
             BigDecimal valorPendente,
-            CondicoesResumo condicoes
+            CondicoesResumo condicoes,
+            BigDecimal taxaDeslocamento,
+            boolean taxaDeslocamentoRepassada
     ) {
 
         public boolean realizado() {

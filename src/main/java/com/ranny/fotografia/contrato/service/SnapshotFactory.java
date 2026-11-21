@@ -84,6 +84,7 @@ public class SnapshotFactory {
                 montarPacote(pacote, agendamento, agora),
                 montarAgendamento(agendamento),
                 montarEstudio(estudio),
+                montarDeslocamento(agendamento),
                 modeloVersao);
     }
 
@@ -125,9 +126,7 @@ public class SnapshotFactory {
                             agendamento.condicoes().promocaoRotulo());
         }
 
-        var valorEfetivo = agendamento != null
-                ? agendamento.valorAcordado()
-                : pacote.valorEfetivo(agora);
+        var valorEfetivo = valorPacote(pacote, agendamento, promocao, agora);
 
         return new ContratoSnapshot.PacoteSnapshot(
                 pacote.nome(),
@@ -140,6 +139,42 @@ public class SnapshotFactory {
                 faixasFotoExtra,
                 promocao,
                 valorEfetivo);
+    }
+
+    /**
+     * O valor efetivo do pacote exclui a taxa de deslocamento. Em agendas com
+     * condicoes congeladas, usa a promocao congelada ou o valor de tabela; sem
+     * condicoes, usa o valor vigente do catalogo na emissao.
+     */
+    private static java.math.BigDecimal valorPacote(PacoteResumo pacote,
+                                                    ResumoAgendamento agendamento,
+                                                    ContratoSnapshot.PromocaoSnapshot promocao,
+                                                    Instant agora) {
+        if (promocao != null) {
+            return promocao.valorPromocional();
+        }
+        if (agendamento != null && agendamento.condicoes() != null) {
+            var valorTabela = agendamento.condicoes().valorTabela();
+            if (valorTabela != null) {
+                return valorTabela;
+            }
+        }
+        return pacote.valorEfetivo(agora);
+    }
+
+    private static ContratoSnapshot.DeslocamentoSnapshot montarDeslocamento(
+            ResumoAgendamento agendamento) {
+        if (agendamento == null || agendamento.taxaDeslocamento() == null) {
+            return null;
+        }
+        var valor = agendamento.taxaDeslocamento();
+        if (valor.signum() <= 0) {
+            return null;
+        }
+        boolean repassado = agendamento.taxaDeslocamentoRepassada();
+        var cobrado = repassado ? valor : java.math.BigDecimal.ZERO;
+        var absorvido = repassado ? java.math.BigDecimal.ZERO : valor;
+        return new ContratoSnapshot.DeslocamentoSnapshot(valor, repassado, cobrado, absorvido);
     }
 
     private static ContratoSnapshot.AgendamentoSnapshot montarAgendamento(ResumoAgendamento agendamento) {

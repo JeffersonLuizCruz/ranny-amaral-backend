@@ -204,6 +204,11 @@ Resposta padrão:
 - Saldo final pago **antes** da data do ensaio apenas registra o pagamento; o status permanece `CONFIRMADO`.
 - Saldo final pago **na data ou depois**, com entrada e saldo quitados, promove o atendimento para `REALIZADO`.
 - Entrada que cobre 100% do pacote deixa o saldo isento e segue a mesma regra de data.
+- A taxa de deslocamento é informada por ensaio (`taxaDeslocamento`) e o staff escolhe entre absorver
+  ou repassar (`repassarTaxaDeslocamento`). Repassada, entra no `valorAcordado` e na base da entrada
+  (pacote 200 + taxa 50 = 250; entrada de 30% = 75). Absorvida, fica registrada sem compor o total.
+- O contrato congela a taxa no snapshot (`deslocamento`) e gera a cláusula automática apenas quando
+  ela é repassada; taxa absorvida não aparece no documento.
 - Bloqueios pontuais impedem criar ou remarcar ensaio no período (`422 HORARIO_BLOQUEADO`) e não
   podem ser criados sobre ensaio ativo (ver “Bloqueios da agenda”).
 - Um job diário às `00:05` de `America/Sao_Paulo` promove para `REALIZADO` os atendimentos

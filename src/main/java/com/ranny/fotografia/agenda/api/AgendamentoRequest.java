@@ -47,6 +47,11 @@ public record AgendamentoRequest(
         @PositiveOrZero(message = "deve ser maior ou igual a zero")
         BigDecimal percentualEntrada,
 
+        @PositiveOrZero(message = "deve ser maior ou igual a zero")
+        BigDecimal taxaDeslocamento,
+
+        Boolean repassarTaxaDeslocamento,
+
         /**
          * Indica se a promoção do catálogo deve ser congelada nas condições.
          * Quando ausente, mantém o comportamento padrão (aplicar se vigente).

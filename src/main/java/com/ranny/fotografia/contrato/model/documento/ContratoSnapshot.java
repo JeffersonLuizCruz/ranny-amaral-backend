@@ -22,6 +22,7 @@ public record ContratoSnapshot(
         PacoteSnapshot pacote,
         AgendamentoSnapshot agendamento,
         EstudioSnapshot estudio,
+        DeslocamentoSnapshot deslocamento,
         int modeloVersao
 ) {
 
@@ -54,6 +55,19 @@ public record ContratoSnapshot(
     }
 
     public record PromocaoSnapshot(BigDecimal valorPromocional, String rotulo) {
+    }
+
+    /**
+     * Taxa de deslocamento congelada no contrato. {@code repassado} indica se o
+     * valor compoe o total cobrado do cliente; quando absorvido, fica registrado
+     * apenas para controle interno.
+     */
+    public record DeslocamentoSnapshot(
+            BigDecimal valor,
+            boolean repassado,
+            BigDecimal valorCobrado,
+            BigDecimal valorAbsorvido
+    ) {
     }
 
     public record AgendamentoSnapshot(

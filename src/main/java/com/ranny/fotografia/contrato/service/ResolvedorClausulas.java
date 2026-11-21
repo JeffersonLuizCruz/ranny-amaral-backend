@@ -10,6 +10,7 @@ import java.text.NumberFormat;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -48,13 +49,78 @@ public class ResolvedorClausulas {
 
     public List<ContratoClausula> resolver(List<ContratoClausula> modelo, ContratoSnapshot snapshot,
                                            DadosResolucao dados) {
+        List<ContratoClausula> fonte = comClausulaDeslocamento(modelo, snapshot, dados);
         Map<String, String> variaveis = variaveis(snapshot, dados);
-        return modelo.stream()
+        return fonte.stream()
                 .map(clausula -> new ContratoClausula(
                         clausula.id(),
                         clausula.titulo(),
                         substituir(clausula.corpo(), variaveis)))
                 .toList();
+    }
+
+    /**
+     * Insere a clausula de deslocamento antes da clausula de pagamento. O texto
+     * e gerado pelo sistema para garantir o mesmo disclosure em qualquer modelo;
+     * se o modelo ja usar os tokens de deslocamento, nada e inserido.
+     */
+    private static List<ContratoClausula> comClausulaDeslocamento(
+            List<ContratoClausula> modelo, ContratoSnapshot snapshot, DadosResolucao dados) {
+        if (modelo == null || modelo.isEmpty()) {
+            return modelo;
+        }
+        ContratoSnapshot.DeslocamentoSnapshot deslocamento =
+                snapshot == null ? null : snapshot.deslocamento();
+        if (deslocamento == null || !deslocamento.repassado()
+                || deslocamento.valor() == null || deslocamento.valor().signum() <= 0) {
+            return modelo;
+        }
+        boolean jaUtilizaTokens = modelo.stream().anyMatch(clausula ->
+                clausula.corpo() != null && clausula.corpo().contains("{{deslocamento."));
+        if (jaUtilizaTokens) {
+            return modelo;
+        }
+
+        ContratoClausula sistema = new ContratoClausula(
+                "cl-deslocamento-sistema",
+                "Deslocamento",
+                descricaoDeslocamento(deslocamento, dados.valorTotal()));
+        List<ContratoClausula> resultado = new ArrayList<>(modelo);
+        int indicePagamento = -1;
+        int indiceComToken = -1;
+        for (int i = 0; i < resultado.size(); i++) {
+            ContratoClausula clausula = resultado.get(i);
+            String corpo = clausula.corpo();
+            if (corpo == null || !corpo.contains("{{contrato.valorTotal}}")) {
+                continue;
+            }
+            if (indiceComToken < 0) {
+                indiceComToken = i;
+            }
+            String titulo = clausula.titulo() == null ? "" : clausula.titulo().toLowerCase(Locale.ROOT);
+            if (titulo.contains("pagamento")) {
+                indicePagamento = i;
+                break;
+            }
+        }
+        int indice = indicePagamento >= 0 ? indicePagamento : indiceComToken;
+        if (indice < 0) {
+            resultado.add(sistema);
+        } else {
+            resultado.add(indice, sistema);
+        }
+        return resultado;
+    }
+
+    /** Texto unico usado pela clausula de sistema e pelo token da paleta. */
+    public static String descricaoDeslocamento(ContratoSnapshot.DeslocamentoSnapshot deslocamento,
+                                               BigDecimal valorTotal) {
+        if (deslocamento == null || !deslocamento.repassado()
+                || deslocamento.valor() == null || deslocamento.valor().signum() <= 0) {
+            return "";
+        }
+        return "A taxa de deslocamento de %s foi repassada ao contratante e está considerada no valor total de %s."
+                .formatted(moeda(deslocamento.valor()), moeda(valorTotal));
     }
 
     private Map<String, String> variaveis(ContratoSnapshot snapshot, DadosResolucao dados) {
@@ -115,6 +181,12 @@ public class ResolvedorClausulas {
         variaveis.put("contrato.percentualEntrada", texto(dados.percentualEntrada()) + "%");
         variaveis.put("contrato.saldoRestante", moeda(dados.saldoRestante()));
         variaveis.put("contrato.formaPagamento", texto(dados.formaPagamento()));
+        ContratoSnapshot.DeslocamentoSnapshot deslocamento = snapshot.deslocamento();
+        if (deslocamento != null) {
+            variaveis.put("deslocamento.valor", moeda(deslocamento.valor()));
+            variaveis.put("deslocamento.descricao",
+                    descricaoDeslocamento(deslocamento, dados.valorTotal()));
+        }
         return variaveis;
     }
 

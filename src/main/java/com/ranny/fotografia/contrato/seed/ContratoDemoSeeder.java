@@ -121,7 +121,7 @@ public class ContratoDemoSeeder implements ApplicationRunner {
         Contrato corporativo = criarContrato(
                 DadosDemo.CONTRATO_CORPORATIVO, "CT-%d-0002".formatted(ano),
                 null, DadosDemo.AGENDAMENTO_CORPORATIVO, DadosDemo.PACOTE_CORPORATIVO,
-                modelo, new BigDecimal("1490.00"), new BigDecimal("447.00"));
+                modelo, new BigDecimal("1540.00"), new BigDecimal("462.00"));
 
         Contrato familia = criarContrato(
                 DadosDemo.CONTRATO_FAMILIA, "CT-%d-0003".formatted(ano),

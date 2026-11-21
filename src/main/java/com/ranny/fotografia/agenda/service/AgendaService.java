@@ -10,6 +10,7 @@ import com.ranny.fotografia.agenda.model.CondicoesPacote;
 import com.ranny.fotografia.agenda.model.ContatoReserva;
 import com.ranny.fotografia.agenda.model.PromocaoAplicada;
 import com.ranny.fotografia.agenda.model.StatusAgendamento;
+import com.ranny.fotografia.agenda.model.TaxaDeslocamento;
 import com.ranny.fotografia.agenda.repository.AgendamentoRepository;
 import com.ranny.fotografia.agenda.repository.BloqueioAgendaRepository;
 import com.ranny.fotografia.cliente.ClienteConsulta;
@@ -129,9 +130,11 @@ public class AgendaService implements AgendamentoConsulta {
         ClienteResumo cliente = resolverCliente(request.clienteId());
         ContatoReserva contato = resolverContato(cliente, request.contato());
 
+        TaxaDeslocamento taxaDeslocamento = TaxaDeslocamento.de(
+                request.taxaDeslocamento(), Boolean.TRUE.equals(request.repassarTaxaDeslocamento()));
         BigDecimal valorAcordado = request.valorAcordado() != null
                 ? CalculadoraPagamento.normalizar(request.valorAcordado())
-                : pacote.valorEfetivo(agora);
+                : pacote.valorEfetivo(agora).add(taxaDeslocamento.valorCobrado());
         BigDecimal percentual = request.percentualEntrada() != null
                 ? CalculadoraPagamento.normalizar(request.percentualEntrada())
                 : PERCENTUAL_ENTRADA_PADRAO;
@@ -165,7 +168,8 @@ public class AgendaService implements AgendamentoConsulta {
                 valorAcordado,
                 entrada,
                 percentual,
-                montarCondicoes(pacote, agora, request.aplicarPromocao()));
+                montarCondicoes(pacote, agora, request.aplicarPromocao()),
+                taxaDeslocamento);
 
         return AgendamentoResponse.de(agendamentoRepository.save(agendamento));
     }
@@ -179,9 +183,24 @@ public class AgendaService implements AgendamentoConsulta {
         ClienteResumo cliente = resolverCliente(request.clienteId());
         ContatoReserva contato = resolverContato(cliente, request.contato());
 
-        BigDecimal valorAcordado = request.valorAcordado() != null
-                ? CalculadoraPagamento.normalizar(request.valorAcordado())
-                : agendamento.getValorAcordado();
+        boolean taxaInformada = request.taxaDeslocamento() != null
+                || request.repassarTaxaDeslocamento() != null;
+        TaxaDeslocamento taxaDeslocamento = taxaInformada
+                ? TaxaDeslocamento.de(request.taxaDeslocamento(),
+                        Boolean.TRUE.equals(request.repassarTaxaDeslocamento()))
+                : agendamento.getTaxaDeslocamento();
+        BigDecimal valorAcordado;
+        if (request.valorAcordado() != null) {
+            valorAcordado = CalculadoraPagamento.normalizar(request.valorAcordado());
+        } else if (taxaInformada) {
+            // Ajusta apenas a parcela do deslocamento, preservando descontos e o
+            // total negociado anteriormente.
+            valorAcordado = agendamento.getValorAcordado()
+                    .subtract(agendamento.getTaxaDeslocamento().valorCobrado())
+                    .add(taxaDeslocamento.valorCobrado());
+        } else {
+            valorAcordado = agendamento.getValorAcordado();
+        }
 
         BigDecimal percentual;
         BigDecimal entrada;
@@ -195,7 +214,9 @@ public class AgendaService implements AgendamentoConsulta {
             entrada = CalculadoraPagamento.valorEntrada(valorAcordado, percentual);
         } else {
             percentual = agendamento.getPercentualEntrada();
-            entrada = agendamento.getValorEntrada();
+            entrada = taxaInformada && request.valorAcordado() == null
+                    ? CalculadoraPagamento.valorEntrada(valorAcordado, percentual)
+                    : agendamento.getValorEntrada();
         }
 
         OffsetDateTime inicio = request.dataHoraInicio();
@@ -228,7 +249,8 @@ public class AgendaService implements AgendamentoConsulta {
                 valorAcordado,
                 entrada,
                 percentual,
-                montarCondicoes(pacote, agora, request.aplicarPromocao()));
+                montarCondicoes(pacote, agora, request.aplicarPromocao()),
+                taxaDeslocamento);
 
         return AgendamentoResponse.de(agendamento);
     }
@@ -478,7 +500,9 @@ public class AgendaService implements AgendamentoConsulta {
                         condicoes.getValorTabela(),
                         condicoes.getFaixasFotoExtra(),
                         condicoes.getPromocaoAplicada() == null ? null : condicoes.getPromocaoAplicada().getValorPromocional(),
-                        condicoes.getPromocaoAplicada() == null ? null : condicoes.getPromocaoAplicada().getRotulo()));
+                        condicoes.getPromocaoAplicada() == null ? null : condicoes.getPromocaoAplicada().getRotulo()),
+                agendamento.getTaxaDeslocamento().getValor(),
+                agendamento.getTaxaDeslocamento().isRepassada());
     }
 
     private static String normalizar(String valor) {
