@@ -26,6 +26,15 @@ public record ContratoSnapshot(
         int modeloVersao
 ) {
 
+    /** Marcador usado quando a reserva nasce antes do cadastro do cliente. */
+    public static final String CLIENTE_A_PREENCHER = "A preencher";
+
+    /** Reconstroi o snapshot com os dados de cliente completados no aceite. */
+    public ContratoSnapshot comCliente(ClienteSnapshot novoCliente) {
+        return new ContratoSnapshot(novoCliente, pacote, agendamento, estudio,
+                deslocamento, modeloVersao);
+    }
+
     public record ClienteSnapshot(
             String nome,
             String whatsapp,

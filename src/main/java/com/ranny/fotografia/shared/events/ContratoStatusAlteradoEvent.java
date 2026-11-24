@@ -22,6 +22,7 @@ public record ContratoStatusAlteradoEvent(
         @JsonProperty("ev") BigDecimal entradaValor,
         @JsonProperty("es") String entradaStatus,
         @JsonProperty("sv") BigDecimal saldoValor,
-        @JsonProperty("ss") String saldoStatus
+        @JsonProperty("ss") String saldoStatus,
+        @JsonProperty("cli") String clienteId
 ) {
 }

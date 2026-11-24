@@ -426,12 +426,7 @@ public class AgendaService implements AgendamentoConsulta {
         if (cliente != null) {
             return ContatoReserva.de(cliente.nome(), cliente.whatsapp());
         }
-        ContatoReserva reserva = contato == null ? null : ContatoReserva.de(contato.nome(), contato.whatsapp());
-        if (reserva == null) {
-            throw new RegraDeNegocioException("CONTATO_OBRIGATORIO",
-                    "Informe um cliente cadastrado ou ao menos nome/WhatsApp de contato.");
-        }
-        return reserva;
+        return contato == null ? null : ContatoReserva.de(contato.nome(), contato.whatsapp());
     }
 
     private static CondicoesPacote montarCondicoes(PacoteResumo pacote, Instant referencia,

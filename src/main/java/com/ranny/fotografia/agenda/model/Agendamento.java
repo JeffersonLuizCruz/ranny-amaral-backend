@@ -225,6 +225,18 @@ public class Agendamento {
         auditoria.marcarAtualizacao();
     }
 
+    /**
+     * Liga a reserva ao cliente cadastrado depois, no aceite do contrato.
+     * Nao sobrescreve um cliente que ja estava vinculado.
+     */
+    public void vincularCliente(String clienteId) {
+        if (clienteId == null || clienteId.isBlank() || this.clienteId != null) {
+            return;
+        }
+        this.clienteId = clienteId;
+        auditoria.marcarAtualizacao();
+    }
+
     /** Remove o vínculo quando o contrato é excluído. */
     public void desvincularContrato() {
         this.contratoId = null;

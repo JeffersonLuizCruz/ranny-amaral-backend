@@ -152,6 +152,23 @@ class AceitePublicoSpec extends Specification {
         clienteRepository.findById(json.contrato.clienteId as String).get().origem == ClienteOrigem.CONTRATO
     }
 
+    def "aceite completa snapshot e clausulas da reserva sem cadastro"() {
+        given:
+        def contrato = criarContratoSemCadastro()
+        def link = gerarLink(contrato.id)
+
+        when:
+        def resultado = aceitar(link.token)
+
+        then:
+        def json = resultado
+        json.contrato.snapshot.cliente.nome == "Juliana Prado"
+        json.contrato.snapshot.cliente.documento == "123.456.789-00"
+        json.contrato.clausulas[0].corpo.contains("Juliana Prado")
+        !json.contrato.clausulas[0].corpo.contains("A preencher")
+        json.contrato.clienteId != null
+    }
+
     def "inicia e conclui upload de comprovante apos o aceite"() {
         given:
         def contrato = criarContratoSemCliente()
@@ -355,6 +372,21 @@ class AceitePublicoSpec extends Specification {
 
     private Map criarContratoSemCliente() {
         def agendamento = Cenario.agendamento(agendamentoRepository, null, pacote)
+        return JsonCorpo.mapa(mockMvc.perform(post("/api/v1/contratos")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        modeloId         : modelo.id,
+                        agendamentoId    : agendamento.id,
+                        pacoteId         : pacote.id,
+                        valorTotal       : 1000.00,
+                        percentualEntrada: 30.00
+                ])))
+                .andExpect(status().isCreated())
+                .andReturn())
+    }
+
+    private Map criarContratoSemCadastro() {
+        def agendamento = Cenario.agendamentoSemClienteNemContato(agendamentoRepository, pacote)
         return JsonCorpo.mapa(mockMvc.perform(post("/api/v1/contratos")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(JsonCorpo.json([

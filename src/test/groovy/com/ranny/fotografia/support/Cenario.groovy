@@ -80,6 +80,22 @@ final class Cenario {
                 new BigDecimal("30.00"), condicoes, taxaDeslocamento))
     }
 
+    /** Reserva criada antes do cadastro: sem cliente e sem contato. */
+    static Agendamento agendamentoSemClienteNemContato(AgendamentoRepository repository,
+                                                       Pacote pacote,
+                                                       OffsetDateTime inicio = amanhaAsDez(),
+                                                       StatusAgendamento status = StatusAgendamento.RESERVADO) {
+        CondicoesPacote condicoes = CondicoesPacote.de(
+                pacote.quantidadeFotosInclusas, pacote.quantidadeVideosInclusos,
+                pacote.valorFotoExtra, pacote.valor, pacote.faixasFotoExtraSnapshot(), null)
+        BigDecimal valorAcordado = pacote.valor
+        return repository.save(Agendamento.criar(
+                null, null, pacote.id, inicio, inicio.plusMinutes(pacote.duracaoMinutos),
+                "Estúdio Teste", status, null,
+                valorAcordado, valorAcordado.multiply(new BigDecimal("0.30")).setScale(2),
+                new BigDecimal("30.00"), condicoes, TaxaDeslocamento.nenhuma()))
+    }
+
     static BloqueioAgenda bloqueio(BloqueioAgendaRepository repository,
                                    OffsetDateTime inicio,
                                    OffsetDateTime fim,

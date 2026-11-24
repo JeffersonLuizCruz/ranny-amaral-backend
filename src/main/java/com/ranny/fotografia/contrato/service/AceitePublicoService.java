@@ -11,6 +11,8 @@ import com.ranny.fotografia.contrato.api.ContratoResponse;
 import com.ranny.fotografia.contrato.api.SolicitacaoAceiteResponse;
 import com.ranny.fotografia.contrato.model.Contrato;
 import com.ranny.fotografia.contrato.model.SolicitacaoAceite;
+import com.ranny.fotografia.contrato.model.documento.ContratoClausula;
+import com.ranny.fotografia.contrato.model.documento.ContratoSnapshot;
 import com.ranny.fotografia.contrato.model.documento.DadosAceite;
 import com.ranny.fotografia.contrato.model.documento.StatusAceite;
 import com.ranny.fotografia.contrato.model.documento.StatusSolicitacaoAceite;
@@ -55,19 +57,22 @@ public class AceitePublicoService {
     private final ContratoNumerador numerador;
     private final ApplicationEventPublisher eventos;
     private final ArquivoUpload arquivoUpload;
+    private final ResolvedorClausulas resolvedorClausulas;
 
     public AceitePublicoService(SolicitacaoAceiteRepository solicitacaoRepository,
                                 ContratoRepository contratoRepository,
                                 ClienteConsulta clienteConsulta,
                                 ContratoNumerador numerador,
                                 ApplicationEventPublisher eventos,
-                                ArquivoUpload arquivoUpload) {
+                                ArquivoUpload arquivoUpload,
+                                ResolvedorClausulas resolvedorClausulas) {
         this.solicitacaoRepository = solicitacaoRepository;
         this.contratoRepository = contratoRepository;
         this.clienteConsulta = clienteConsulta;
         this.numerador = numerador;
         this.eventos = eventos;
         this.arquivoUpload = arquivoUpload;
+        this.resolvedorClausulas = resolvedorClausulas;
     }
 
     @Transactional(noRollbackFor = RecursoExpiradoException.class)
@@ -135,6 +140,7 @@ public class AceitePublicoService {
                         request.autorizaUsoImagem()));
 
         contrato.registrarAceite(dados, cliente.id(), solicitacao.getId());
+        completarDocumento(contrato, dados);
         solicitacao.aceitar(dados);
 
         publicar(contrato);
@@ -251,6 +257,46 @@ public class AceitePublicoService {
         if (solicitacao.getStatus() == StatusSolicitacaoAceite.EXPIRADA) {
             throw new RecursoExpiradoException("LINK_EXPIRADO", "Este link de aceite expirou.");
         }
+    }
+
+    /**
+     * Reservas criadas antes do cadastro nascem com "A preencher" no documento.
+     * No aceite o cliente informa os dados; snapshot e clausulas sao atualizados
+     * para que o contrato assinado reflita o cadastro real.
+     */
+    private void completarDocumento(Contrato contrato, DadosAceite dados) {
+        ContratoSnapshot atual = contrato.getSnapshot();
+        if (atual == null || atual.cliente() == null
+                || !ContratoSnapshot.CLIENTE_A_PREENCHER.equals(atual.cliente().nome())) {
+            return;
+        }
+
+        ContratoSnapshot.ClienteSnapshot cliente = new ContratoSnapshot.ClienteSnapshot(
+                dados.nomeCompleto(),
+                dados.whatsapp(),
+                atual.cliente().email(),
+                dados.documento(),
+                dados.tipoDocumento(),
+                dados.cidade());
+        ContratoSnapshot atualizado = atual.comCliente(cliente);
+
+        List<ContratoClausula> clausulas = null;
+        List<ContratoClausula> modelo = contrato.getClausulasModelo();
+        if (modelo != null && !modelo.isEmpty()) {
+            ResolvedorClausulas.DadosResolucao dadosResolucao =
+                    new ResolvedorClausulas.DadosResolucao(
+                            contrato.getNumero(),
+                            contrato.getDataEmissao(),
+                            contrato.getDataValidade(),
+                            contrato.getValorTotal(),
+                            contrato.getValorEntrada(),
+                            contrato.getPercentualEntrada(),
+                            contrato.getSaldoRestante(),
+                            contrato.getFormaPagamento());
+            clausulas = resolvedorClausulas.resolver(modelo, atualizado, dadosResolucao);
+        }
+
+        contrato.completarDadosCliente(atualizado, clausulas);
     }
 
     private void publicar(Contrato contrato) {

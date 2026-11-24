@@ -20,7 +20,8 @@ class EventSerializationSpec extends Specification {
                 new BigDecimal("300.00"),
                 "confirmado",
                 new BigDecimal("700.00"),
-                "confirmado")
+                "confirmado",
+                "9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d")
 
         when:
         def json = JsonApoio.escrever(evento)
@@ -33,5 +34,6 @@ class EventSerializationSpec extends Specification {
         lido.statusAceite() == evento.statusAceite()
         lido.entradaValor() == evento.entradaValor()
         lido.saldoStatus() == evento.saldoStatus()
+        lido.clienteId() == evento.clienteId()
     }
 }

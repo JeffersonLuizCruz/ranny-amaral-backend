@@ -115,6 +115,50 @@ class ContratoAgendaSyncSpec extends Specification {
         agendamentoRepository.findById(agendamento.id).get().contratoId == null
     }
 
+    def "aceite de reserva sem cadastro vincula o cliente ao agendamento"() {
+        given:
+        def modelo = Cenario.modelo(modeloRepository)
+        def pacote = Cenario.pacote(pacoteRepository)
+        def agendamento = Cenario.agendamentoSemClienteNemContato(agendamentoRepository, pacote)
+
+        when:
+        def contrato = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/contratos")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        modeloId         : modelo.id,
+                        agendamentoId    : agendamento.id,
+                        pacoteId         : pacote.id,
+                        valorTotal       : 1000.00,
+                        percentualEntrada: 30.00
+                ])))
+                .andExpect(status().isCreated())
+                .andReturn())
+
+        def link = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/contratos/${contrato.id}/links-aceite")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        mockMvc.perform(post("/api/v1/public/contratos/${link.token}/aceite")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        nomeCompleto : "Juliana Prado",
+                        tipoDocumento: "cpf",
+                        documento    : "123.456.789-00",
+                        cidade       : "São Paulo",
+                        whatsapp     : "(11) 91234-5678"
+                ])))
+                .andExpect(status().isOk())
+
+        aguardar { agendamentoRepository.findById(agendamento.id).get().clienteId != null }
+
+        then:
+        def clienteId = agendamentoRepository.findById(agendamento.id).get().clienteId
+        clienteId != null
+        clienteRepository.findById(clienteId).get().nome == "Juliana Prado"
+    }
+
     def "sincroniza contrato, aceite e pagamento com o agendamento"() {
         given:
         def modelo = Cenario.modelo(modeloRepository)

@@ -13,9 +13,10 @@ import java.time.OffsetDateTime;
 /**
  * PATTERN: DTO / Form Object.
  *
- * <p>{@code clienteId} e {@code contato} sao mutuamente complementares: uma
- * reserva pode existir antes do cliente aceitar o contrato. A regra "e preciso
- * ao menos um dos dois" fica no service, porque depende do cadastro atual.
+ * <p>{@code clienteId} e {@code contato} sao opcionais: a reserva pode existir
+ * antes de o cliente preencher os dados no aceite do contrato. Quando ha um
+ * cliente vinculado, o contato e derivado dele; sem cliente, o contato informado
+ * (se houver) e preservado apenas como referencia da reserva.
  */
 public record AgendamentoRequest(
         String clienteId,

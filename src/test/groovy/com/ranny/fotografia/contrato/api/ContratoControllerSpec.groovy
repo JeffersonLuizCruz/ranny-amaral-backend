@@ -104,6 +104,27 @@ class ContratoControllerSpec extends Specification {
         json.historico[0].tipo == "criado"
     }
 
+    def "cria contrato de reserva sem cliente nem contato"() {
+        given:
+        def agendamento = Cenario.agendamentoSemClienteNemContato(agendamentoRepository, pacote)
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/contratos")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        modeloId         : modelo.id,
+                        agendamentoId    : agendamento.id,
+                        percentualEntrada: 30.00
+                ])))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath('$.snapshot.cliente.nome').value("A preencher"))
+                .andExpect(jsonPath('$.statusAceite').value("rascunho"))
+                .andReturn()
+
+        then:
+        JsonCorpo.mapa(resultado).id
+    }
+
     def "congela deslocamento repassado no snapshot e insere clausula de sistema"() {
         given:
         def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,

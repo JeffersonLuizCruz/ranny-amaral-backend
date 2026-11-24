@@ -76,6 +76,28 @@ class AgendaControllerSpec extends Specification {
         JsonCorpo.mapa(resultado).id
     }
 
+    def "cria agendamento sem cliente e sem contato"() {
+        given:
+        def pacote = Cenario.pacote(pacoteRepository)
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/agenda")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        pacoteId      : pacote.id,
+                        dataHoraInicio: "2026-12-10T10:00:00-03:00",
+                        local         : "Estúdio Teste"
+                ])))
+                .andExpect(status().isCreated())
+                .andReturn()
+
+        then:
+        def criado = JsonCorpo.mapa(resultado)
+        criado.id
+        criado.clienteId == null
+        criado.contato == null
+    }
+
     def "soma a taxa de deslocamento repassada e calcula a entrada sobre o total"() {
         given:
         def cliente = Cenario.cliente(clienteRepository)
@@ -287,7 +309,6 @@ class AgendaControllerSpec extends Specification {
 
         where:
         descricao                    | usarCliente | pacoteId | inicio                       | fim                         | local   | contato | statusEsperado | codigo
-        "nao ha cliente nem contato" | false       | null     | "2026-12-10T10:00:00-03:00" | null                        | "Local" | null    | 422            | "CONTATO_OBRIGATORIO"
         "o fim vem antes do inicio"  | true        | null     | "2026-12-10T10:00:00-03:00" | "2026-12-10T09:00:00-03:00" | "Local" | null    | 422            | "PERIODO_INVALIDO"
         "o pacote nao existe"        | true        | "pkg-x"  | "2026-12-10T10:00:00-03:00" | null                        | "Local" | null    | 404            | "RECURSO_NAO_ENCONTRADO"
         "o local esta vazio"         | true        | null     | "2026-12-10T10:00:00-03:00" | null                        | ""      | null    | 422            | "VALIDACAO"

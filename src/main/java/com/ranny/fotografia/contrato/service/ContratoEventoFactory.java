@@ -24,6 +24,7 @@ final class ContratoEventoFactory {
                 contrato.getPagamento().getValor(),
                 contrato.getPagamento().getStatus().getValor(),
                 contrato.getPagamentoFinal().getValor(),
-                contrato.getPagamentoFinal().getStatus().getValor());
+                contrato.getPagamentoFinal().getStatus().getValor(),
+                contrato.getClienteId());
     }
 }

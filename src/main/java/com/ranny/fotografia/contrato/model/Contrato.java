@@ -289,6 +289,25 @@ public class Contrato {
         auditoria.marcarAtualizacao();
     }
 
+    /**
+     * Completa o documento quando o cliente preenche os dados no aceite de uma
+     * reserva que nasceu sem cadastro. Mantem o restante do snapshot congelado.
+     */
+    public void completarDadosCliente(ContratoSnapshot snapshotAtualizado,
+                                      List<ContratoClausula> clausulasAtualizadas) {
+        if (snapshotAtualizado == null) {
+            return;
+        }
+        this.snapshot = snapshotAtualizado;
+        if (clausulasAtualizadas != null) {
+            this.clausulas = List.copyOf(clausulasAtualizadas);
+        }
+        this.clienteNome = snapshotAtualizado.cliente() == null
+                ? null
+                : snapshotAtualizado.cliente().nome();
+        auditoria.marcarAtualizacao();
+    }
+
     public void expirar() {
         if (statusAceite != StatusAceite.PENDENTE) {
             return;

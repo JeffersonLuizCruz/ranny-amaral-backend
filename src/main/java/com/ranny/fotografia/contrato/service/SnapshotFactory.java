@@ -100,8 +100,9 @@ public class SnapshotFactory {
                     agendamento.contato().nome(), agendamento.contato().whatsapp(),
                     null, null, null, null);
         }
-        throw new RegraDeNegocioException("CLIENTE_OBRIGATORIO",
-                "O contrato precisa de um cliente cadastrado ou de um contato de reserva.");
+        // Reserva criada antes do cadastro: os dados sao completados no aceite.
+        return new ContratoSnapshot.ClienteSnapshot(
+                ContratoSnapshot.CLIENTE_A_PREENCHER, null, null, null, null, null);
     }
 
     private static ContratoSnapshot.PacoteSnapshot montarPacote(PacoteResumo pacote,

@@ -58,6 +58,7 @@ public class ContratoStatusAlteradoListener {
             if (agendamento.getContratoId() == null) {
                 agendamento.vincularContrato(evento.contratoId());
             }
+            agendamento.vincularCliente(evento.clienteId());
             StatusAgendamento status = statusParaAgenda(evento);
             if (agendamento.getStatus() == StatusAgendamento.CANCELADO
                     && status != StatusAgendamento.CANCELADO
