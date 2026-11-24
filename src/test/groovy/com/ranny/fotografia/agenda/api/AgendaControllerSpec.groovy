@@ -441,6 +441,95 @@ class AgendaControllerSpec extends Specification {
         "CANCELADO"| "RESERVADO" | 200
     }
 
+    def "cancela ensaio com justificativa e registra o motivo"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository)
+        def pacote = Cenario.pacote(pacoteRepository)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), StatusAgendamento.CONFIRMADO)
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/agenda/${agendamento.id}/cancelar")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([motivo: "  Cliente pediu para remarcar  "])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.status').value("cancelado"))
+                .andExpect(jsonPath('$.cancelamentoMotivo').value("Cliente pediu para remarcar"))
+                .andExpect(jsonPath('$.canceladoEm').exists())
+                .andExpect(jsonPath('$.canceladoPor').value("Equipe do estudio"))
+                .andReturn()
+
+        then:
+        JsonCorpo.mapa(resultado).cancelamentoMotivo == "Cliente pediu para remarcar"
+        def persistido = agendamentoRepository.findById(agendamento.id).get()
+        persistido.status == StatusAgendamento.CANCELADO
+        persistido.cancelamentoMotivo == "Cliente pediu para remarcar"
+        persistido.canceladoEm != null
+    }
+
+    def "nao cancela ensaio realizado"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository)
+        def pacote = Cenario.pacote(pacoteRepository)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), StatusAgendamento.REALIZADO)
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/agenda/${agendamento.id}/cancelar")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([motivo: "Nao compareceu"])))
+                .andReturn()
+
+        then:
+        resultado.response.status == 422
+        JsonCorpo.mapa(resultado).codigo == "TRANSICAO_INVALIDA"
+        agendamentoRepository.findById(agendamento.id).get().status == StatusAgendamento.REALIZADO
+    }
+
+    def "rejeita cancelamento sem justificativa pela API"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository)
+        def pacote = Cenario.pacote(pacoteRepository)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), StatusAgendamento.CONFIRMADO)
+
+        when:
+        def semCorpo = mockMvc.perform(post("/api/v1/agenda/${agendamento.id}/cancelar")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([motivo: "   "])))
+                .andReturn()
+        def porStatus = mockMvc.perform(patch("/api/v1/agenda/${agendamento.id}/status")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([status: "cancelado"])))
+                .andReturn()
+
+        then:
+        semCorpo.response.status == 422
+        JsonCorpo.mapa(semCorpo).codigo == "VALIDACAO"
+        porStatus.response.status == 422
+        JsonCorpo.mapa(porStatus).codigo == "MOTIVO_CANCELAMENTO_OBRIGATORIO"
+        agendamentoRepository.findById(agendamento.id).get().status == StatusAgendamento.CONFIRMADO
+    }
+
+    def "aceita cancelamento por status quando a justificativa e informada"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository)
+        def pacote = Cenario.pacote(pacoteRepository)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote)
+
+        when:
+        def resultado = mockMvc.perform(patch("/api/v1/agenda/${agendamento.id}/status")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([status: "cancelado", motivo: "Cliente desistiu"])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.status').value("cancelado"))
+                .andExpect(jsonPath('$.cancelamentoMotivo').value("Cliente desistiu"))
+                .andReturn()
+
+        then:
+        JsonCorpo.mapa(resultado).cancelamentoMotivo == "Cliente desistiu"
+    }
+
     def "confirma entrada e registra saldo final"() {
         given:
         def cliente = Cenario.cliente(clienteRepository)

@@ -3,6 +3,7 @@ package com.ranny.fotografia.agenda.api;
 import com.ranny.fotografia.agenda.model.StatusAgendamento;
 import com.ranny.fotografia.shared.model.FormaPagamentoSaldo;
 import com.ranny.fotografia.shared.model.PagamentoStatus;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -18,7 +19,16 @@ public final class AgendaRequests {
 
     public record StatusRequest(
             @NotNull(message = "nao pode ser nulo")
-            StatusAgendamento status
+            StatusAgendamento status,
+            @Size(max = 1000, message = "deve ter no maximo 1000 caracteres")
+            String motivo
+    ) {
+    }
+
+    public record CancelamentoRequest(
+            @NotBlank(message = "nao pode ser vazio")
+            @Size(max = 1000, message = "deve ter no maximo 1000 caracteres")
+            String motivo
     ) {
     }
 

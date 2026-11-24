@@ -201,6 +201,10 @@ Resposta padrão:
 - O saldo final só pode ser registrado com a entrada quitada; caso contrário a API retorna
   `422 ENTRADA_PENDENTE`.
 - Atendimento `CANCELADO` bloqueia novo registro de saldo final (`422 ATENDIMENTO_CANCELADO`).
+- O cancelamento do ensaio exige justificativa (`POST /api/v1/agenda/{id}/cancelar` com `motivo`).
+  `PATCH /api/v1/agenda/{id}/status` para `cancelado` também exige `motivo`. Ensaios `REALIZADO` não
+  podem ser cancelados (`422 TRANSICAO_INVALIDA`) e agendamentos já cancelados antes da V22 permanecem
+  válidos com `cancelamentoMotivo` nulo. A justificativa fica preservada mesmo se o ensaio for reaberto.
 - Saldo final pago **antes** da data do ensaio apenas registra o pagamento; o status permanece `CONFIRMADO`.
 - Saldo final pago **na data ou depois**, com entrada e saldo quitados, promove o atendimento para `REALIZADO`.
 - Entrada que cobre 100% do pacote deixa o saldo isento e segue a mesma regra de data.
@@ -351,7 +355,7 @@ bucket. O download do staff agora é protegido pelo JWT.
 | Usuários (ADMIN) | `GET/POST /api/v1/usuarios`, `POST /api/v1/usuarios/{id}/reset-password`, `PUT /api/v1/usuarios/{id}`, `PATCH /api/v1/usuarios/{id}/ativo` |
 | Clientes | `GET/POST /api/v1/clientes`, `GET/PUT/DELETE /api/v1/clientes/{id}` |
 | Pacotes | `GET/POST /api/v1/pacotes`, `GET/PUT/DELETE /api/v1/pacotes/{id}`, `PATCH /api/v1/pacotes/{id}/ativo` |
-| Agenda | `GET/POST /api/v1/agenda`, `GET /api/v1/agenda/calendario`, `GET/PUT/DELETE /api/v1/agenda/{id}`, `PATCH /{id}/status`, `PUT /{id}/pagamento-entrada`, `PUT /{id}/pagamento-final` |
+| Agenda | `GET/POST /api/v1/agenda`, `GET /api/v1/agenda/calendario`, `GET/PUT/DELETE /api/v1/agenda/{id}`, `PATCH /{id}/status`, `POST /{id}/cancelar`, `PUT /{id}/pagamento-entrada`, `PUT /{id}/pagamento-final` |
 | Bloqueios da agenda | `GET/POST /api/v1/agenda/bloqueios`, `PUT/DELETE /api/v1/agenda/bloqueios/{id}` |
 | Contratos | `GET/POST /api/v1/contratos`, `GET/PUT/DELETE /{id}`, `GET /{id}/pagamento/comprovante/url`, `POST /{id}/duplicar`, `GET/POST /{id}/links-aceite`, `POST /{id}/links-aceite/{linkId}/cancelar`, `POST /{id}/reabrir`, `POST /{id}/cancelar` |
 | Pagamentos do contrato | `POST /{id}/pagamento/confirmar`, `POST /{id}/pagamento/rejeitar`, `POST /{id}/pagamento/isentar`, `PUT /{id}/pagamento-final`, `POST /{id}/pagamento-final/isentar`, `POST /{id}/pagamento-final/reabrir` |

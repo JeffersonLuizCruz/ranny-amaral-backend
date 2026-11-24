@@ -18,6 +18,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -80,6 +81,15 @@ public class Agendamento {
 
     @Column(length = 1000)
     private String observacoes;
+
+    @Column(name = "cancelamento_motivo", length = 1000)
+    private String cancelamentoMotivo;
+
+    @Column(name = "cancelado_em")
+    private Instant canceladoEm;
+
+    @Column(name = "cancelado_por", length = 120)
+    private String canceladoPor;
 
     @Column(name = "valor_acordado", nullable = false, precision = 10, scale = 2)
     private BigDecimal valorAcordado;
@@ -165,6 +175,36 @@ public class Agendamento {
                             .formatted(status.getValor(), novoStatus.getValor()));
         }
         this.status = novoStatus;
+        auditoria.marcarAtualizacao();
+    }
+
+    /**
+     * Cancela o ensaio exigindo justificativa.
+     *
+     * <p>O motivo fica preservado mesmo que o ensaio seja reaberto como
+     * reserva; assim o historico do cancelamento nao se perde. Um ensaio ja
+     * cancelado pode receber a justificativa depois (ex.: cancelamento vindo
+     * do contrato), mas um ensaio realizado nunca pode ser cancelado.
+     */
+    public void cancelar(String motivo, String por, Instant quando) {
+        if (!status.podeTransicionarPara(StatusAgendamento.CANCELADO)) {
+            throw new RegraDeNegocioException("TRANSICAO_INVALIDA",
+                    "Nao e permitido alterar o agendamento de '%s' para '%s'."
+                            .formatted(status.getValor(), StatusAgendamento.CANCELADO.getValor()));
+        }
+        if (motivo == null || motivo.isBlank()) {
+            throw new RegraDeNegocioException("MOTIVO_CANCELAMENTO_OBRIGATORIO",
+                    "Informe a justificativa do cancelamento do ensaio.");
+        }
+        String motivoNormalizado = motivo.trim();
+        if (motivoNormalizado.length() > 1000) {
+            throw new RegraDeNegocioException("MOTIVO_CANCELAMENTO_LONGO",
+                    "A justificativa do cancelamento deve ter no maximo 1000 caracteres.");
+        }
+        this.status = StatusAgendamento.CANCELADO;
+        this.cancelamentoMotivo = motivoNormalizado;
+        this.canceladoEm = quando == null ? Instant.now() : quando;
+        this.canceladoPor = por == null || por.isBlank() ? "Equipe do estudio" : por.trim();
         auditoria.marcarAtualizacao();
     }
 

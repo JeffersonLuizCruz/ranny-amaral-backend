@@ -55,7 +55,10 @@ public record AgendamentoResponse(
         BigDecimal valorRecebido,
         BigDecimal valorPendente,
         BigDecimal taxaDeslocamento,
-        boolean taxaDeslocamentoRepassada
+        boolean taxaDeslocamentoRepassada,
+        String cancelamentoMotivo,
+        Instant canceladoEm,
+        String canceladoPor
 ) {
 
     public static AgendamentoResponse de(Agendamento agendamento) {
@@ -94,7 +97,10 @@ public record AgendamentoResponse(
                 resumo.valorRecebido(),
                 resumo.valorPendente(),
                 agendamento.getTaxaDeslocamento().getValor(),
-                agendamento.getTaxaDeslocamento().isRepassada()
+                agendamento.getTaxaDeslocamento().isRepassada(),
+                agendamento.getCancelamentoMotivo(),
+                agendamento.getCanceladoEm(),
+                agendamento.getCanceladoPor()
         );
     }
 

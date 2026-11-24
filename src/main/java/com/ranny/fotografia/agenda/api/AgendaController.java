@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -91,7 +92,15 @@ public class AgendaController {
     @Operation(summary = "Altera o status do agendamento")
     public AgendamentoResponse alterarStatus(@PathVariable String id,
                                              @Valid @RequestBody AgendaRequests.StatusRequest request) {
-        return agendaService.alterarStatus(id, request.status());
+        return agendaService.alterarStatus(id, request.status(), request.motivo());
+    }
+
+    @PostMapping("/{id}/cancelar")
+    @Operation(summary = "Cancela o ensaio com justificativa")
+    public AgendamentoResponse cancelar(@PathVariable String id,
+                                        @Valid @RequestBody AgendaRequests.CancelamentoRequest request,
+                                        Authentication authentication) {
+        return agendaService.cancelar(id, request.motivo(), ator(authentication));
     }
 
     @PutMapping("/{id}/pagamento-entrada")
@@ -108,5 +117,10 @@ public class AgendaController {
             @PathVariable String id,
             @Valid @RequestBody AgendaRequests.PagamentoFinalRequest request) {
         return agendaService.atualizarPagamentoFinal(id, request);
+    }
+
+    private static String ator(Authentication authentication) {
+        return authentication == null || authentication.getName() == null
+                ? "Equipe do estudio" : authentication.getName();
     }
 }

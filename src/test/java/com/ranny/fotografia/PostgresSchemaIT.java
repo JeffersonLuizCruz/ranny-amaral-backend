@@ -68,6 +68,17 @@ class PostgresSchemaIT {
     }
 
     @Test
+    void aplicaCancelamentoComJustificativaNoAgendamento() {
+        Integer colunas = jdbcTemplate.queryForObject("""
+                select count(*) from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = 'agendamentos'
+                  and column_name in ('cancelamento_motivo', 'cancelado_em', 'cancelado_por')
+                """, Integer.class);
+        assertThat(colunas).isEqualTo(3);
+    }
+
+    @Test
     void aplicaFaixasProgressivasDeFotoExtra() {
         Integer colunas = jdbcTemplate.queryForObject("""
                 select count(*) from information_schema.columns

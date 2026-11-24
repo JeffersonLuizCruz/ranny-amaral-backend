@@ -256,12 +256,21 @@ public class AgendaService implements AgendamentoConsulta {
     }
 
     @Transactional
-    public AgendamentoResponse alterarStatus(String id, StatusAgendamento status) {
+    public AgendamentoResponse alterarStatus(String id, StatusAgendamento status, String motivo) {
         Agendamento agendamento = obter(id);
-        if (status != StatusAgendamento.CANCELADO) {
-            validarBloqueio(agendamento.getDataHoraInicio(), agendamento.getDataHoraFim());
+        if (status == StatusAgendamento.CANCELADO) {
+            agendamento.cancelar(motivo, null, Instant.now());
+            return AgendamentoResponse.de(agendamento);
         }
+        validarBloqueio(agendamento.getDataHoraInicio(), agendamento.getDataHoraFim());
         agendamento.alterarStatus(status);
+        return AgendamentoResponse.de(agendamento);
+    }
+
+    @Transactional
+    public AgendamentoResponse cancelar(String id, String motivo, String por) {
+        Agendamento agendamento = obter(id);
+        agendamento.cancelar(motivo, por, Instant.now());
         return AgendamentoResponse.de(agendamento);
     }
 

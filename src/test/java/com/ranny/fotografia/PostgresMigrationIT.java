@@ -85,6 +85,60 @@ class PostgresMigrationIT {
     }
 
     @Test
+    void preservaAgendamentoCanceladoAoAplicarV22() throws Exception {
+        String schema = "cancel_" + UUID.randomUUID().toString().replace("-", "");
+
+        Flyway.configure()
+                .dataSource(URL, USER, PASSWORD)
+                .schemas(schema)
+                .defaultSchema(schema)
+                .locations("classpath:db/migration")
+                .target(MigrationVersion.fromVersion("21"))
+                .load()
+                .migrate();
+
+        try (Connection connection = DriverManager.getConnection(URL, USER, PASSWORD);
+             Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    insert into %s.agendamentos (
+                      id, lock_version, pacote_id, data_hora_inicio, data_hora_fim, local,
+                      status, percentual_entrada, saldo_restante, valor_acordado,
+                      valor_entrada, entrada_status, criado_em, atualizado_em
+                    ) values (
+                      'apt-legado-cancelado', 0, 'pkg-legado', now(), now() + interval '1 hour',
+                      'Estudio', 'CANCELADO', 30.00, 700.00, 1000.00,
+                      300.00, 'PENDENTE', now(), now()
+                    )
+                    """.formatted(schema));
+        }
+
+        Flyway.configure()
+                .dataSource(URL, USER, PASSWORD)
+                .schemas(schema)
+                .defaultSchema(schema)
+                .locations("classpath:db/migration")
+                .load()
+                .migrate();
+
+        try (Connection connection = DriverManager.getConnection(URL, USER, PASSWORD);
+             Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery("""
+                     select status, cancelamento_motivo, cancelado_em
+                     from %s.agendamentos where id = 'apt-legado-cancelado'
+                     """.formatted(schema))) {
+            assertThat(result.next()).isTrue();
+            assertThat(result.getString("status")).isEqualTo("CANCELADO");
+            assertThat(result.getString("cancelamento_motivo")).isNull();
+            assertThat(result.getObject("cancelado_em")).isNull();
+        } finally {
+            try (Connection connection = DriverManager.getConnection(URL, USER, PASSWORD);
+                 Statement statement = connection.createStatement()) {
+                statement.execute("drop schema if exists %s cascade".formatted(schema));
+            }
+        }
+    }
+
+    @Test
     void migraDadosDaV1ParaV4ComBackfill() throws Exception {
         String schema = "mig_" + UUID.randomUUID().toString().replace("-", "");
 
