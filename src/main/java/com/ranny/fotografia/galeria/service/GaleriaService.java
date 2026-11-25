@@ -1,6 +1,7 @@
 package com.ranny.fotografia.galeria.service;
 
 import com.ranny.fotografia.agenda.AgendamentoConsulta;
+import com.ranny.fotografia.arquivo.ArquivoConsulta;
 import com.ranny.fotografia.arquivo.ArquivoFinalidade;
 import com.ranny.fotografia.arquivo.ArquivoUpload;
 import com.ranny.fotografia.cliente.ClienteConsulta;
@@ -59,7 +60,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -114,6 +118,7 @@ public class GaleriaService implements GaleriaConsulta {
     private final EstudioConsulta estudioConsulta;
     private final PacoteConsulta pacoteConsulta;
     private final ArquivoUpload arquivoUpload;
+    private final ArquivoConsulta arquivoConsulta;
     private final ProcessadorMidia processadorMidia;
     private final ApplicationEventPublisher eventos;
     private final boolean processamentoAsync;
@@ -134,6 +139,7 @@ public class GaleriaService implements GaleriaConsulta {
                           EstudioConsulta estudioConsulta,
                           PacoteConsulta pacoteConsulta,
                           ArquivoUpload arquivoUpload,
+                          ArquivoConsulta arquivoConsulta,
                           ProcessadorMidia processadorMidia,
                           ApplicationEventPublisher eventos,
                           @Value("${app.galeria.processamento-async:true}")
@@ -155,6 +161,7 @@ public class GaleriaService implements GaleriaConsulta {
         this.estudioConsulta = estudioConsulta;
         this.pacoteConsulta = pacoteConsulta;
         this.arquivoUpload = arquivoUpload;
+        this.arquivoConsulta = arquivoConsulta;
         this.processadorMidia = processadorMidia;
         this.eventos = eventos;
         this.processamentoAsync = processamentoAsync;
@@ -342,8 +349,79 @@ public class GaleriaService implements GaleriaConsulta {
     public void removerMidia(String galeriaId, String midiaId) {
         Galeria galeria = obter(galeriaId);
         MidiaGaleria midia = midiaDaGaleria(galeriaId, midiaId);
+        descartarDerivados(galeriaId, midiaId);
         midia.remover();
         evento(galeria, EventoGaleriaTipo.MIDIA_REMOVIDA, midia.getNomeOriginal() + " removida.");
+    }
+
+    /**
+     * Reprocessa os derivados de uma foto.
+     *
+     * <p>Usado quando o processamento assincrono falhou (ex.: colisao de
+     * checksum ou queda do processo) ou quando a midia ficou presa em
+     * {@code PROCESSANDO}. Como o salvamento de derivados reaproveita binarios
+     * identicos, o reprocessamento e idempotente.
+     */
+    @Transactional
+    public GaleriaDtos.MidiaResponse reprocessarMidia(String galeriaId, String midiaId) {
+        Galeria galeria = obter(galeriaId);
+        MidiaGaleria midia = midiaDaGaleria(galeriaId, midiaId);
+        if (midia.getTipo() != MidiaTipo.FOTO) {
+            throw new RegraDeNegocioException("REPROCESSAMENTO_APENAS_FOTOS",
+                    "Somente fotos possuem derivados para reprocessar.");
+        }
+        if (midia.getStatus() == MidiaStatus.REMOVIDA) {
+            throw new RecursoNaoEncontradoException("Midia", midiaId);
+        }
+        if (midia.estaDisponivel() && temDerivadosOriginais(midiaId)) {
+            return midiaResponse(midia, galeriaId, true, false);
+        }
+
+        midia.reprocessar();
+        midiaRepository.saveAndFlush(midia);
+        if (processamentoAsync) {
+            eventos.publishEvent(new MidiaProcessamentoEvent(
+                    galeriaId, midiaId, midia.getArquivoOriginalId(), false));
+        } else {
+            processarMidia(midia, galeria);
+            midiaRepository.saveAndFlush(midia);
+        }
+        return midiaResponse(midia, galeriaId, true, false);
+    }
+
+    /**
+     * Recoloca na fila todas as fotos presas em {@code PROCESSANDO} sem derivados
+     * ou em {@code FALHA}. Util para recuperar um lote inteiro apos um incidente.
+     */
+    @Transactional
+    public GaleriaDtos.ReprocessarPendentesResponse reprocessarPendentes(String galeriaId) {
+        Galeria galeria = obter(galeriaId);
+        List<MidiaGaleria> pendentes = midiaRepository
+                .findByGaleriaIdAndStatusNotOrderByOrdemAsc(galeriaId, MidiaStatus.REMOVIDA)
+                .stream()
+                .filter(midia -> midia.getTipo() == MidiaTipo.FOTO)
+                .filter(midia -> midia.getStatus() == MidiaStatus.FALHA
+                        || (midia.getStatus() == MidiaStatus.PROCESSANDO
+                        && !temDerivadosOriginais(midia.getId())))
+                .toList();
+        for (MidiaGaleria midia : pendentes) {
+            midia.reprocessar();
+            midiaRepository.save(midia);
+        }
+        midiaRepository.flush();
+        if (processamentoAsync) {
+            for (MidiaGaleria midia : pendentes) {
+                eventos.publishEvent(new MidiaProcessamentoEvent(
+                        galeriaId, midia.getId(), midia.getArquivoOriginalId(), false));
+            }
+        } else {
+            for (MidiaGaleria midia : pendentes) {
+                processarMidia(midia, galeria);
+                midiaRepository.save(midia);
+            }
+            midiaRepository.flush();
+        }
+        return new GaleriaDtos.ReprocessarPendentesResponse(pendentes.size());
     }
 
     @Transactional
@@ -427,6 +505,28 @@ public class GaleriaService implements GaleriaConsulta {
             processarMidia(midia, galeria);
         }
         midiaRepository.saveAndFlush(midia);
+    }
+
+    /**
+     * Registra a falha do processamento em transacao propria.
+     *
+     * <p>A tentativa que falhou sofre rollback (a excecao normalmente aparece no
+     * flush), portanto o status precisa ser atualizado fora dela para a UI sair
+     * do spinner e oferecer o reprocessamento.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void registrarFalhaProcessamento(String galeriaId, String midiaId, String erro) {
+        midiaRepository.findByIdAndGaleriaId(midiaId, galeriaId).ifPresent(midia -> {
+            if (midia.getStatus() == MidiaStatus.REMOVIDA) {
+                return;
+            }
+            if (midia.getStatus() == MidiaStatus.PROCESSANDO) {
+                midia.falhar(erro);
+            } else {
+                midia.registrarErroProcessamento(erro);
+            }
+            midiaRepository.save(midia);
+        });
     }
 
     @Transactional
@@ -1537,31 +1637,99 @@ public class GaleriaService implements GaleriaConsulta {
     }
 
     private void processarMidia(MidiaGaleria midia, Galeria galeria) {
-        try {
-            byte[] original = arquivoUpload.abrirConteudo(
-                    midia.getArquivoOriginalId(), ArquivoFinalidade.FOTO_ORIGINAL, galeria.getId());
-            ProcessadorMidia.Resultado resultado = processadorMidia.processar(
-                    original, midia.getNomeOriginal(), estudioConsulta.nome());
-            for (ProcessadorMidia.Derivado derivado : resultado.derivados()) {
-                ArquivoUpload.ArquivoResumo arquivo = arquivoUpload.salvarDisponivel(
-                        new ArquivoUpload.IniciarArquivo(
-                                ArquivoFinalidade.FOTO_DERIVADO,
-                                galeria.getId(),
-                                "estudios/%s/galerias/%s/fotos/%s/derivados"
-                                        .formatted(galeria.getEstudioId(), galeria.getId(), midia.getId()),
-                                derivado.nomeArquivo(),
-                                derivado.mimeType()),
-                        derivado.conteudo());
-                derivadoRepository.save(MidiaDerivado.criar(
-                        midia.getId(), derivado.tipo(), arquivo.id(),
-                        derivado.largura(), derivado.altura(), "jpg",
-                        MidiaDerivadoOrigem.ORIGINAL, derivado.marcada()));
-            }
-            midia.disponivel(resultado.largura(), resultado.altura(), null);
-        } catch (RuntimeException ex) {
-            log.warn("Falha ao processar midia {}: {}", midia.getId(), ex.getMessage());
-            midia.falhar(ex.getMessage());
+        // Um reprocessamento pode encontrar derivados parciais de uma tentativa
+        // anterior; os binarios em si sao reaproveitados por checksum.
+        derivadoRepository.deleteByMidiaIdAndOrigem(midia.getId(), MidiaDerivadoOrigem.ORIGINAL);
+        byte[] original = arquivoUpload.abrirConteudo(
+                midia.getArquivoOriginalId(), ArquivoFinalidade.FOTO_ORIGINAL, galeria.getId());
+        ProcessadorMidia.Resultado resultado = processadorMidia.processar(
+                original, midia.getNomeOriginal(), estudioConsulta.nome());
+        for (ProcessadorMidia.Derivado derivado : resultado.derivados()) {
+            ArquivoUpload.ArquivoResumo arquivo = arquivoUpload.salvarDisponivel(
+                    new ArquivoUpload.IniciarArquivo(
+                            ArquivoFinalidade.FOTO_DERIVADO,
+                            galeria.getId(),
+                            "estudios/%s/galerias/%s/fotos/%s/derivados"
+                                    .formatted(galeria.getEstudioId(), galeria.getId(), midia.getId()),
+                            derivado.nomeArquivo(),
+                            derivado.mimeType()),
+                    derivado.conteudo());
+            derivadoRepository.save(MidiaDerivado.criar(
+                    midia.getId(), derivado.tipo(), arquivo.id(),
+                    derivado.largura(), derivado.altura(), "jpg",
+                    MidiaDerivadoOrigem.ORIGINAL, derivado.marcada()));
         }
+        midia.disponivel(resultado.largura(), resultado.altura(), null);
+    }
+
+    private boolean temDerivadosOriginais(String midiaId) {
+        return derivadoRepository.findByMidiaId(midiaId).stream()
+                .anyMatch(derivado -> derivado.getOrigem() == MidiaDerivadoOrigem.ORIGINAL);
+    }
+
+    /**
+     * Remove os derivados de uma midia excluida e libera os binarios que nenhuma
+     * outra midia usa. O original permanece disponivel para a deduplicacao.
+     */
+    private void descartarDerivados(String galeriaId, String midiaId) {
+        List<MidiaDerivado> derivados = derivadoRepository.findByMidiaId(midiaId);
+        if (derivados.isEmpty()) {
+            return;
+        }
+        Map<String, ArquivoConsulta.ArquivoResumo> arquivos = new LinkedHashMap<>();
+        for (ArquivoConsulta.ArquivoResumo arquivo : arquivoConsulta.arquivosDaReferencia(galeriaId)) {
+            arquivos.put(arquivo.id(), arquivo);
+        }
+        List<String> idsParaExpurgar = new ArrayList<>();
+        List<String> chavesParaRemover = new ArrayList<>();
+        for (MidiaDerivado derivado : derivados) {
+            String arquivoId = derivado.getArquivoId();
+            if (arquivoId == null
+                    || derivadoRepository.countByArquivoIdAndMidiaIdNot(arquivoId, midiaId) > 0) {
+                continue;
+            }
+            ArquivoConsulta.ArquivoResumo arquivo = arquivos.get(arquivoId);
+            if (arquivo == null) {
+                continue;
+            }
+            idsParaExpurgar.add(arquivoId);
+            if (arquivo.objectKey() != null
+                    && arquivoConsulta.contarReferencias(arquivo.objectKey()) <= 1) {
+                chavesParaRemover.add(arquivo.objectKey());
+            }
+        }
+        derivadoRepository.deleteAll(derivados);
+        if (idsParaExpurgar.isEmpty()) {
+            return;
+        }
+        if (!chavesParaRemover.isEmpty()) {
+            removerObjetosAposCommit(chavesParaRemover);
+        }
+        arquivoConsulta.marcarExpurgados(idsParaExpurgar);
+    }
+
+    /**
+     * Apaga os binarios apenas depois do commit.
+     *
+     * <p>Se a transacao falhar, os objetos continuam no storage e as linhas
+     * permanecem validas; um objeto orfao e menos grave que uma URL quebrada.
+     */
+    private void removerObjetosAposCommit(List<String> objectKeys) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            arquivoConsulta.removerObjetos(objectKeys);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    arquivoConsulta.removerObjetos(objectKeys);
+                } catch (RuntimeException ex) {
+                    log.warn("Falha ao remover derivados do storage {}: {}",
+                            objectKeys, ex.getMessage());
+                }
+            }
+        });
     }
 
     private void validarGateSelecao(Galeria galeria) {

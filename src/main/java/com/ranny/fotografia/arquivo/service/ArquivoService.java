@@ -195,6 +195,16 @@ public class ArquivoService implements ArquivoUpload {
     @Transactional
     public ArquivoResumo salvarDisponivel(IniciarArquivo comando, byte[] conteudo) {
         String checksum = sha256(conteudo);
+        // Derivados identicos podem ser gerados de novo (ex.: foto removida e
+        // reenviada dentro da mesma galeria). Reaproveitar o binario existente
+        // preserva a deduplicacao e evita violar uq_arquivos_checksum_disponivel.
+        Optional<Arquivo> existente = repository
+                .findFirstByFinalidadeAndReferenciaIdAndChecksumSha256AndStatus(
+                        comando.finalidade(), comando.referenciaId(), checksum,
+                        ArquivoStatus.DISPONIVEL);
+        if (existente.isPresent()) {
+            return resumo(existente.get());
+        }
         ValidadorArquivo.ArquivoValidado validado = validador.validarInicio(
                 comando.finalidade(), comando.nomeOriginal(), comando.mimeType(),
                 conteudo.length, checksum, tamanhoMaximo(comando.finalidade()));

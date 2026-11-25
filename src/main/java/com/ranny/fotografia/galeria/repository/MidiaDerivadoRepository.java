@@ -12,5 +12,10 @@ public interface MidiaDerivadoRepository extends JpaRepository<MidiaDerivado, St
 
     List<MidiaDerivado> findByMidiaId(String midiaId);
 
+    void deleteByMidiaId(String midiaId);
+
     void deleteByMidiaIdAndOrigem(String midiaId, MidiaDerivadoOrigem origem);
+
+    /** Quantos derivados de outras midias ainda apontam para o mesmo arquivo. */
+    long countByArquivoIdAndMidiaIdNot(String arquivoId, String midiaId);
 }

@@ -437,6 +437,10 @@ public final class GaleriaDtos {
                                       int totalSelecionado) {
     }
 
+    /** Quantidade de midias recolocadas na fila de processamento. */
+    public record ReprocessarPendentesResponse(int quantidade) {
+    }
+
     /** Liga/desliga a liberacao automatica de uma midia. */
     public record AutoLiberacaoRequest(boolean liberarAutomaticamente) {
     }

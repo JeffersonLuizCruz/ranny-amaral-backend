@@ -47,4 +47,34 @@ class MidiaGaleriaSpec extends Specification {
         expect:
         midia.prontaParaEntrega(true)
     }
+
+    def "reprocessar volta para PROCESSANDO e limpa o erro"() {
+        given:
+        def midia = MidiaGaleria.criar(
+                'g1', MidiaTipo.FOTO, 'arquivo-1', 'foto.jpg', 'image/jpeg',
+                1024, 1)
+        midia.falhar('falha simulada')
+
+        when:
+        midia.reprocessar()
+
+        then:
+        midia.status == MidiaStatus.PROCESSANDO
+        midia.erroProcessamento == null
+    }
+
+    def "registrar erro nao altera o status de uma midia ja disponivel"() {
+        given:
+        def midia = MidiaGaleria.criar(
+                'g1', MidiaTipo.FOTO, 'arquivo-1', 'foto.jpg', 'image/jpeg',
+                1024, 1)
+        midia.disponivel(1200, 800, null)
+
+        when:
+        midia.registrarErroProcessamento('falha apenas dos editados')
+
+        then:
+        midia.status == MidiaStatus.DISPONIVEL
+        midia.erroProcessamento == 'falha apenas dos editados'
+    }
 }

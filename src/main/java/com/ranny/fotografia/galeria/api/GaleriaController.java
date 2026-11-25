@@ -88,6 +88,20 @@ public class GaleriaController {
         galeriaService.removerMidia(id, midiaId);
     }
 
+    @PostMapping("/{id}/midias/{midiaId}/reprocessar")
+    @Operation(summary = "Reprocessa os derivados de uma foto")
+    public GaleriaDtos.MidiaResponse reprocessarMidia(
+            @PathVariable String id, @PathVariable String midiaId) {
+        return galeriaService.reprocessarMidia(id, midiaId);
+    }
+
+    @PostMapping("/{id}/midias/reprocessar-pendentes")
+    @Operation(summary = "Reprocessa fotos presas ou com falha de processamento")
+    public GaleriaDtos.ReprocessarPendentesResponse reprocessarPendentes(
+            @PathVariable String id) {
+        return galeriaService.reprocessarPendentes(id);
+    }
+
     @PostMapping("/{id}/midias/{midiaId}/editada/upload")
     @Operation(summary = "Inicia o upload da versao final editada de uma foto")
     public GaleriaDtos.UploadSessaoResponse iniciarUploadEditada(

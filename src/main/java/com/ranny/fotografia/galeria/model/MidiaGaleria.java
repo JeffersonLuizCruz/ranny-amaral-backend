@@ -131,8 +131,20 @@ public class MidiaGaleria {
 
     public void falhar(String erro) {
         this.status = MidiaStatus.FALHA;
+        registrarErroProcessamento(erro);
+    }
+
+    /** Registra a causa sem alterar o status (ex.: falha apenas dos derivados editados). */
+    public void registrarErroProcessamento(String erro) {
         this.erroProcessamento = erro == null ? null
                 : erro.substring(0, Math.min(erro.length(), 500));
+        this.auditoria.marcarAtualizacao();
+    }
+
+    /** Recoloca a mídia na fila de processamento (retry manual). */
+    public void reprocessar() {
+        this.status = MidiaStatus.PROCESSANDO;
+        this.erroProcessamento = null;
         this.auditoria.marcarAtualizacao();
     }
 
