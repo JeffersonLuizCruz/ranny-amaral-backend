@@ -10,6 +10,7 @@ import com.ranny.fotografia.galeria.model.SelecaoGaleria;
 import com.ranny.fotografia.shared.model.FormaPagamentoSaldo;
 import com.ranny.fotografia.shared.financeiro.FaixaAplicada;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
@@ -435,6 +436,14 @@ public final class GaleriaDtos {
 
     public record LiberarLoteResponse(int quantidadeLiberada, int totalLiberado,
                                       int totalSelecionado) {
+    }
+
+    /** Remocao de um lote de fotos antes da selecao ser enviada. */
+    public record RemoverMidiasRequest(@NotEmpty List<String> midiaIds) {
+    }
+
+    public record RemoverMidiasResponse(int quantidadeRemovida, int quantidadeIgnorada,
+                                        long bytesLiberados) {
     }
 
     /** Quantidade de midias recolocadas na fila de processamento. */

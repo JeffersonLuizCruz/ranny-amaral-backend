@@ -101,6 +101,7 @@ public class GaleriaService implements GaleriaConsulta {
     private static final String ESTUDIO_PADRAO = "estudio";
     private static final int DIAS_SELECAO = 30;
     private static final int DIAS_ENTREGA = 90;
+    private static final int MAX_REMOCAO_LOTE = 500;
     private static final Duration VALIDADE_DOWNLOAD_SELECAO = Duration.ofMinutes(10);
 
     private final GaleriaRepository galeriaRepository;
@@ -276,6 +277,7 @@ public class GaleriaService implements GaleriaConsulta {
             throw new RegraDeNegocioException("TIPO_MIDIA_INVALIDO",
                     "Informe o tipo da midia: foto ou video.");
         }
+        validarVideoIncluso(galeria, tipo);
         finalidadeUpload(request.finalidade(), tipo);
         ArquivoFinalidade finalidade = tipo == MidiaTipo.FOTO
                 ? ArquivoFinalidade.FOTO_ORIGINAL
@@ -302,6 +304,7 @@ public class GaleriaService implements GaleriaConsulta {
             throw new RegraDeNegocioException("TIPO_MIDIA_INVALIDO",
                     "Informe o tipo da midia: foto ou video.");
         }
+        validarVideoIncluso(galeria, tipo);
         MidiaFinalidade finalidadeMidia = finalidadeUpload(request.finalidade(), tipo);
         ArquivoFinalidade finalidade = tipo == MidiaTipo.FOTO
                 ? ArquivoFinalidade.FOTO_ORIGINAL
@@ -349,9 +352,213 @@ public class GaleriaService implements GaleriaConsulta {
     public void removerMidia(String galeriaId, String midiaId) {
         Galeria galeria = obter(galeriaId);
         MidiaGaleria midia = midiaDaGaleria(galeriaId, midiaId);
-        descartarDerivados(galeriaId, midiaId);
-        midia.remover();
-        evento(galeria, EventoGaleriaTipo.MIDIA_REMOVIDA, midia.getNomeOriginal() + " removida.");
+        validarRemocaoDeMidia(galeria);
+        if (midia.getStatus() == MidiaStatus.REMOVIDA) {
+            return;
+        }
+        validarMidiaNaoEntregue(midia);
+        removerMidiasInterno(galeria, List.of(midia),
+                midia.getTipo() == MidiaTipo.VIDEO, false);
+    }
+
+    @Transactional
+    public GaleriaDtos.RemoverMidiasResponse removerFotos(String galeriaId,
+                                                          List<String> midiaIds) {
+        Galeria galeria = obter(galeriaId);
+        validarRemocaoDeMidia(galeria);
+        List<String> ids = idsUnicos(midiaIds);
+        if (ids.isEmpty()) {
+            throw new RegraDeNegocioException("LOTE_VAZIO",
+                    "Informe ao menos uma foto para remover.");
+        }
+        if (ids.size() > MAX_REMOCAO_LOTE) {
+            throw new RegraDeNegocioException("LOTE_MUITO_GRANDE",
+                    "Remova no maximo %d fotos por lote.".formatted(MAX_REMOCAO_LOTE));
+        }
+
+        Map<String, MidiaGaleria> porId = new LinkedHashMap<>();
+        for (MidiaGaleria midia : midiaRepository.findByGaleriaIdAndIdIn(galeriaId, ids)) {
+            porId.put(midia.getId(), midia);
+        }
+
+        List<MidiaGaleria> fotos = new ArrayList<>();
+        int ignoradas = 0;
+        for (String id : ids) {
+            MidiaGaleria midia = porId.get(id);
+            if (midia == null || midia.getStatus() == MidiaStatus.REMOVIDA) {
+                ignoradas += 1;
+                continue;
+            }
+            if (midia.getTipo() != MidiaTipo.FOTO) {
+                throw new RegraDeNegocioException("REMOCAO_LOTE_APENAS_FOTOS",
+                        "A remocao em lote aceita somente fotos. Remova videos individualmente.");
+            }
+            validarMidiaNaoEntregue(midia);
+            fotos.add(midia);
+        }
+
+        if (fotos.isEmpty()) {
+            return new GaleriaDtos.RemoverMidiasResponse(0, ignoradas, 0L);
+        }
+        ResultadoRemocao resultado = removerMidiasInterno(galeria, fotos, true, true);
+        return new GaleriaDtos.RemoverMidiasResponse(
+                resultado.quantidade(), ignoradas, resultado.bytesLiberados());
+    }
+
+    private ResultadoRemocao removerMidiasInterno(Galeria galeria,
+                                                  List<MidiaGaleria> midias,
+                                                  boolean expurgarOriginais,
+                                                  boolean lote) {
+        Set<String> idsRemovidos = new LinkedHashSet<>();
+        for (MidiaGaleria midia : midias) {
+            idsRemovidos.add(midia.getId());
+        }
+
+        List<MidiaDerivado> derivados = derivadoRepository.findByMidiaIdIn(idsRemovidos);
+
+        // O que continua na galeria nao pode perder um objeto compartilhado por
+        // checksum ou por deduplicacao de original/editada.
+        Set<String> arquivosEmUso = new HashSet<>();
+        List<MidiaGaleria> ativas = midiaRepository
+                .findByGaleriaIdAndStatusNotOrderByOrdemAsc(galeria.getId(), MidiaStatus.REMOVIDA)
+                .stream()
+                .filter(midia -> !idsRemovidos.contains(midia.getId()))
+                .toList();
+        for (MidiaGaleria ativa : ativas) {
+            adicionarSePreenchido(arquivosEmUso, ativa.getArquivoOriginalId());
+            adicionarSePreenchido(arquivosEmUso, ativa.getArquivoEditadoId());
+        }
+        if (!ativas.isEmpty()) {
+            List<String> idsAtivos = ativas.stream().map(MidiaGaleria::getId).toList();
+            for (MidiaDerivado derivado : derivadoRepository.findByMidiaIdIn(idsAtivos)) {
+                adicionarSePreenchido(arquivosEmUso, derivado.getArquivoId());
+            }
+        }
+
+        Map<String, ArquivoConsulta.ArquivoResumo> arquivos = new LinkedHashMap<>();
+        Map<String, Integer> ocorrenciasPorChave = new LinkedHashMap<>();
+        for (ArquivoConsulta.ArquivoResumo arquivo : arquivoConsulta.arquivosDaReferencia(
+                galeria.getId())) {
+            arquivos.put(arquivo.id(), arquivo);
+            ocorrenciasPorChave.merge(arquivo.objectKey(), 1, Integer::sum);
+        }
+
+        Set<String> candidatos = new LinkedHashSet<>();
+        for (MidiaDerivado derivado : derivados) {
+            adicionarSePreenchido(candidatos, derivado.getArquivoId());
+        }
+        for (MidiaGaleria midia : midias) {
+            adicionarSePreenchido(candidatos, midia.getArquivoEditadoId());
+            if (expurgarOriginais || midia.getTipo() == MidiaTipo.VIDEO) {
+                adicionarSePreenchido(candidatos, midia.getArquivoOriginalId());
+            }
+        }
+
+        Set<String> arquivosParaExpurgar = new LinkedHashSet<>();
+        List<String> chavesParaRemover = new ArrayList<>();
+        long bytesLiberados = 0;
+        for (String arquivoId : candidatos) {
+            if (arquivosEmUso.contains(arquivoId)) {
+                continue;
+            }
+            ArquivoConsulta.ArquivoResumo arquivo = arquivos.get(arquivoId);
+            if (arquivo == null
+                    || ocorrenciasPorChave.getOrDefault(arquivo.objectKey(), 0) > 1) {
+                continue;
+            }
+            if (arquivosParaExpurgar.add(arquivoId)) {
+                chavesParaRemover.add(arquivo.objectKey());
+                bytesLiberados += arquivo.tamanhoBytes();
+            }
+        }
+
+        if (!derivados.isEmpty()) {
+            derivadoRepository.deleteAll(derivados);
+        }
+        limparSelecaoRascunho(galeria, idsRemovidos);
+        midias.forEach(MidiaGaleria::remover);
+        midiaRepository.saveAll(midias);
+
+        if (!arquivosParaExpurgar.isEmpty()) {
+            arquivoConsulta.marcarExpurgados(arquivosParaExpurgar);
+        }
+        if (!chavesParaRemover.isEmpty()) {
+            removerObjetosAposCommit(chavesParaRemover);
+        }
+
+        if (lote) {
+            evento(galeria, EventoGaleriaTipo.MIDIA_REMOVIDA,
+                    "%d foto(s) removida(s) em lote (%s liberados)."
+                            .formatted(midias.size(), formatarBytes(bytesLiberados)));
+        } else {
+            MidiaGaleria midia = midias.get(0);
+            evento(galeria, EventoGaleriaTipo.MIDIA_REMOVIDA,
+                    "%s (%s) removida.".formatted(
+                            midia.getNomeOriginal(), formatarBytes(midia.getTamanhoBytes())));
+        }
+
+        return new ResultadoRemocao(midias.size(), bytesLiberados);
+    }
+
+    private void limparSelecaoRascunho(Galeria galeria, Set<String> midiaIds) {
+        selecaoRepository.findFirstByGaleriaIdOrderByEnviadaEmDesc(galeria.getId())
+                .filter(selecao -> selecao.getStatus() == SelecaoStatus.REABERTA)
+                .ifPresent(selecao -> {
+                    selecaoItemRepository.deleteBySelecaoIdAndMidiaIdIn(
+                            selecao.getId(), midiaIds);
+                    int fotos = 0;
+                    int videos = 0;
+                    for (SelecaoItem item : selecaoItemRepository.findBySelecaoId(
+                            selecao.getId())) {
+                        if (MidiaTipo.FOTO.name().equals(item.getTipo())) {
+                            fotos += 1;
+                        } else if (MidiaTipo.VIDEO.name().equals(item.getTipo())) {
+                            videos += 1;
+                        }
+                    }
+                    selecao.ajustarContagens(fotos, videos);
+                    selecaoRepository.save(selecao);
+                });
+    }
+
+    private void validarRemocaoDeMidia(Galeria galeria) {
+        if (galeria.getStatus() != GaleriaStatus.AGUARDANDO_UPLOAD
+                && galeria.getStatus() != GaleriaStatus.EM_SELECAO) {
+            throw new RegraDeNegocioException("MIDIA_NAO_REMOVIVEL",
+                    "Reabra a selecao antes de remover midias. Midias ja entregues nao podem ser removidas.");
+        }
+    }
+
+    private void validarMidiaNaoEntregue(MidiaGaleria midia) {
+        if (midia.estaEntregue()) {
+            throw new RegraDeNegocioException("MIDIA_ENTREGUE_NAO_PODE_SER_REMOVIDA",
+                    "Midias ja entregues nao podem ser removidas.");
+        }
+    }
+
+    private static void adicionarSePreenchido(Collection<String> destino, String valor) {
+        if (valor != null && !valor.isBlank()) {
+            destino.add(valor);
+        }
+    }
+
+    private static String formatarBytes(long bytes) {
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        double valor = bytes;
+        String[] unidades = {"KB", "MB", "GB", "TB"};
+        for (int indice = 0; indice < unidades.length; indice += 1) {
+            valor /= 1024;
+            if (valor < 1024 || indice == unidades.length - 1) {
+                return String.format(Locale.ROOT, "%.1f %s", valor, unidades[indice])
+                        .replace('.', ',');
+            }
+        }
+        return bytes + " B";
+    }
+
+    private record ResultadoRemocao(int quantidade, long bytesLiberados) {
     }
 
     /**
@@ -1668,47 +1875,6 @@ public class GaleriaService implements GaleriaConsulta {
     }
 
     /**
-     * Remove os derivados de uma midia excluida e libera os binarios que nenhuma
-     * outra midia usa. O original permanece disponivel para a deduplicacao.
-     */
-    private void descartarDerivados(String galeriaId, String midiaId) {
-        List<MidiaDerivado> derivados = derivadoRepository.findByMidiaId(midiaId);
-        if (derivados.isEmpty()) {
-            return;
-        }
-        Map<String, ArquivoConsulta.ArquivoResumo> arquivos = new LinkedHashMap<>();
-        for (ArquivoConsulta.ArquivoResumo arquivo : arquivoConsulta.arquivosDaReferencia(galeriaId)) {
-            arquivos.put(arquivo.id(), arquivo);
-        }
-        List<String> idsParaExpurgar = new ArrayList<>();
-        List<String> chavesParaRemover = new ArrayList<>();
-        for (MidiaDerivado derivado : derivados) {
-            String arquivoId = derivado.getArquivoId();
-            if (arquivoId == null
-                    || derivadoRepository.countByArquivoIdAndMidiaIdNot(arquivoId, midiaId) > 0) {
-                continue;
-            }
-            ArquivoConsulta.ArquivoResumo arquivo = arquivos.get(arquivoId);
-            if (arquivo == null) {
-                continue;
-            }
-            idsParaExpurgar.add(arquivoId);
-            if (arquivo.objectKey() != null
-                    && arquivoConsulta.contarReferencias(arquivo.objectKey()) <= 1) {
-                chavesParaRemover.add(arquivo.objectKey());
-            }
-        }
-        derivadoRepository.deleteAll(derivados);
-        if (idsParaExpurgar.isEmpty()) {
-            return;
-        }
-        if (!chavesParaRemover.isEmpty()) {
-            removerObjetosAposCommit(chavesParaRemover);
-        }
-        arquivoConsulta.marcarExpurgados(idsParaExpurgar);
-    }
-
-    /**
      * Apaga os binarios apenas depois do commit.
      *
      * <p>Se a transacao falhar, os objetos continuam no storage e as linhas
@@ -1926,6 +2092,14 @@ public class GaleriaService implements GaleriaConsulta {
 
     private static String primeiroNaoNulo(String primeiro, String segundo) {
         return primeiro != null ? primeiro : segundo;
+    }
+
+    private void validarVideoIncluso(Galeria galeria, MidiaTipo tipo) {
+        if (tipo == MidiaTipo.VIDEO && galeria.getVideosInclusos() <= 0) {
+            throw new RegraDeNegocioException("VIDEOS_NAO_INCLUSOS",
+                    "Esta galeria nao tem video incluso no pacote. "
+                            + "Nao e possivel enviar video para entrega.");
+        }
     }
 
     private MidiaFinalidade finalidadeUpload(String valor, MidiaTipo tipo) {

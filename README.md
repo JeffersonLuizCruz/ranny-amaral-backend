@@ -275,7 +275,13 @@ bucket. O download do staff agora é protegido pelo JWT.
 - Fotos até **50 MB** e vídeos até **500 MB**.
 - Upload direto ao Garage/S3 com progresso e deduplicação (retomada após reload ainda pendente — DT-006).
 - Fotos geram derivados `thumb-400` e `web-1600` via processamento de imagem.
-- Vídeos são armazenados e entregues como original nesta fase.
+- Vídeos são armazenados e entregues como original nesta fase. O envio de vídeo é bloqueado
+  (`422 VIDEOS_NAO_INCLUSOS`) quando a galeria não tem vídeo incluso no pacote.
+- **Remoção de mídia** só é permitida em `aguardando_upload`/`em_selecao`; mídia com `entregue_em`
+  nunca pode ser removida. A remoção individual de foto mantém o original para deduplicação.
+- **Remoção em lote de fotos:** `POST /api/v1/galerias/{id}/midias/remover` com
+  `{ "midiaIds": [...] }` (até 500 IDs, somente fotos). O lote expurga originais, versões editadas e
+  derivados das fotos removidas, limpa itens da seleção reaberta e preserva os vídeos.
 - Cada foto e vídeo recebe um **número estável** (`ordem`) por tipo dentro da galeria. O grid público e o
   detalhe do staff exibem o mesmo número, da esquerda para a direita; remoções não reutilizam números e
   podem deixar lacunas.

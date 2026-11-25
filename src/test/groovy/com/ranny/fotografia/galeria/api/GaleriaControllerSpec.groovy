@@ -993,6 +993,43 @@ class GaleriaControllerSpec extends Specification {
         ativas.find { it.id == quarta }.ordem == 4
     }
 
+    def "remove um lote de fotos antes da selecao"() {
+        given:
+        def cliente = Cenario.cliente(clienteRepository, "Cliente Remocao Lote")
+        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0)
+        def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
+                Cenario.amanhaAsDez(), StatusAgendamento.REALIZADO)
+        agendamento.atualizarPagamentoEntrada(
+                new BigDecimal("300.00"), new BigDecimal("30.00"),
+                PagamentoEntrada.confirmada(new BigDecimal("300.00"), new BigDecimal("30.00"),
+                        Instant.now(), "Teste"))
+        agendamento.atualizarPagamentoFinal(
+                PagamentoSaldo.recebido(new BigDecimal("700.00"), FormaPagamentoSaldo.PIX,
+                        Instant.now(), "Teste"))
+        agendamentoRepository.saveAndFlush(agendamento)
+
+        def galeria = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/galerias")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([agendamentoId: agendamento.id])))
+                .andExpect(status().isOk())
+                .andReturn())
+        def primeira = enviarFoto(galeria.id, "foto-1.jpg", imagemJpeg(130, 80, Color.BLUE))
+        def segunda = enviarFoto(galeria.id, "foto-2.jpg", imagemJpeg(131, 80, Color.RED))
+
+        when:
+        def resultado = mockMvc.perform(post("/api/v1/galerias/${galeria.id}/midias/remover")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([midiaIds: [primeira, segunda]])))
+                .andExpect(status().isOk())
+                .andReturn()
+
+        then:
+        def corpo = JsonCorpo.mapa(resultado)
+        corpo.quantidadeRemovida == 2
+        midiaRepository.findByGaleriaIdAndStatusNotOrderByOrdemAsc(
+                galeria.id, MidiaStatus.REMOVIDA).isEmpty()
+    }
+
     def "ordena a selecao publica pela numeracao da esquerda para a direita"() {
         given:
         def cliente = Cenario.cliente(clienteRepository, "Cliente Ordem Publica")
@@ -1516,8 +1553,8 @@ class GaleriaControllerSpec extends Specification {
                                           String finalidade = "edicao",
                                           BigDecimal valorFotoExtra = new BigDecimal("50.00")) {
         def cliente = Cenario.cliente(clienteRepository, nomeCliente)
-        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1, 0,
-                valorFotoExtra, null, faixas)
+        def pacote = Cenario.pacote(pacoteRepository, "Galeria", new BigDecimal("1000.00"), 1,
+                comVideo ? 1 : 0, valorFotoExtra, null, faixas)
         def agendamento = Cenario.agendamento(agendamentoRepository, cliente, pacote,
                 Cenario.amanhaAsDez(), StatusAgendamento.REALIZADO)
         agendamento.atualizarPagamentoEntrada(

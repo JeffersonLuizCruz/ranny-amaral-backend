@@ -88,6 +88,14 @@ public class GaleriaController {
         galeriaService.removerMidia(id, midiaId);
     }
 
+    @PostMapping("/{id}/midias/remover")
+    @Operation(summary = "Remove um lote de fotos antes da selecao")
+    public GaleriaDtos.RemoverMidiasResponse removerMidias(
+            @PathVariable String id,
+            @Valid @RequestBody GaleriaDtos.RemoverMidiasRequest request) {
+        return galeriaService.removerFotos(id, request.midiaIds());
+    }
+
     @PostMapping("/{id}/midias/{midiaId}/reprocessar")
     @Operation(summary = "Reprocessa os derivados de uma foto")
     public GaleriaDtos.MidiaResponse reprocessarMidia(

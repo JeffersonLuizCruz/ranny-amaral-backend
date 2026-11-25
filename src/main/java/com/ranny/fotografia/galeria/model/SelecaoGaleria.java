@@ -90,4 +90,11 @@ public class SelecaoGaleria {
         this.status = SelecaoStatus.REABERTA;
         this.auditoria.marcarAtualizacao();
     }
+
+    /** Recalcula os contadores depois que uma midia removida sai do rascunho. */
+    public void ajustarContagens(int fotosSelecionadas, int videosSelecionados) {
+        this.fotosSelecionadas = Math.max(0, fotosSelecionadas);
+        this.videosSelecionados = Math.max(0, videosSelecionados);
+        this.auditoria.marcarAtualizacao();
+    }
 }
