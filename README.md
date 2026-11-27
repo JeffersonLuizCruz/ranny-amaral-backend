@@ -47,6 +47,23 @@ O script trunca todas as tabelas de `public`, exceto `flyway_schema_history`. No
 APP_SEED_ENABLED=false ./mvnw spring-boot:run
 ```
 
+### Redefinir a senha do admin local
+
+Se a senha do admin for alterada por engano ou por uma execução de QA manual:
+
+```bash
+bash scripts/reset-dev-admin.sh
+```
+
+Por padrão volta para `admin@rannyamaral.com.br` / `admin12345`. Para outra senha:
+
+```bash
+ADMIN_PASSWORD='outra-senha' bash scripts/reset-dev-admin.sh
+```
+
+O script só toca no Postgres local de `docker-compose.dev.yml`. Pare o backend
+antes de rodar e reinicie depois.
+
 ## Testes
 
 ```bash
