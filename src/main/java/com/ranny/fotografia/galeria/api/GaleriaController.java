@@ -237,6 +237,12 @@ public class GaleriaController {
         return galeriaService.publicarEntrega(id);
     }
 
+    @PostMapping("/{id}/entrega/entregar")
+    @Operation(summary = "Libera as midias prontas e publica a entrega em uma unica acao")
+    public GaleriaDtos.EntregaResponse entregarAoCliente(@PathVariable String id) {
+        return galeriaService.entregarAoCliente(id);
+    }
+
     @PostMapping("/{id}/entrega/revogar")
     @Operation(summary = "Revoga a entrega e suspende os downloads")
     public void revogarEntrega(@PathVariable String id) {

@@ -438,6 +438,14 @@ public final class GaleriaDtos {
                                       int totalSelecionado) {
     }
 
+    /**
+     * Resultado da entrega combinada: libera as midias prontas da selecao e
+     * publica o link de entrega em uma unica transacao.
+     */
+    public record EntregaResponse(LinkResponse link, int liberadasAgora, int totalLiberado,
+                                  int totalSelecionado, boolean jaPublicada) {
+    }
+
     /** Remocao de um lote de fotos antes da selecao ser enviada. */
     public record RemoverMidiasRequest(@NotEmpty List<String> midiaIds) {
     }

@@ -472,6 +472,49 @@ class GaleriaE2ECenariosSpec extends Specification {
         marcarPassou(r)
     }
 
+    def "S21 — entrega ao cliente em uma unica acao"() {
+        given:
+        def r = resultado("S21", "Cliente S21", "Entrega atomica",
+                "bloqueia sem edicao; libera e publica; idempotente")
+        def p = prepararGaleria("Cliente S21", 3, 2)
+        selecionar(p.linkToken, p.edicaoIds + p.prontaIds)
+
+        when:
+        def bloqueada = mockMvc.perform(
+                post("/api/v1/galerias/${p.galeriaId}/entrega/entregar"))
+                .andReturn()
+        def corpoBloqueio = JsonCorpo.mapa(bloqueada)
+        p.edicaoIds.eachWithIndex { id, index ->
+            enviarVersaoEditada(p.galeriaId, id, Color.GREEN, index)
+        }
+        def entrega = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${p.galeriaId}/entrega/entregar"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def segunda = JsonCorpo.mapa(mockMvc.perform(
+                post("/api/v1/galerias/${p.galeriaId}/entrega/entregar"))
+                .andExpect(status().isOk())
+                .andReturn())
+        def d = detalhe(p.galeriaId)
+
+        r.obtido = "bloqueio=${corpoBloqueio.codigo}; status=${d.galeria.status}; " +
+                "liberadasAgora=${entrega.liberadasAgora}; " +
+                "total=${entrega.totalLiberado}/${entrega.totalSelecionado}; " +
+                "idempotente=${segunda.jaPublicada}"
+        r.detalhe = "liberadas na galeria=${d.galeria.fotosLiberadas}"
+
+        then:
+        bloqueada.response.status == 422
+        corpoBloqueio.codigo == "FOTOS_SEM_ENTREGA"
+        entrega.liberadasAgora == 3
+        entrega.totalLiberado == 5
+        entrega.totalSelecionado == 5
+        segunda.jaPublicada
+        d.galeria.status == "entregue"
+        d.galeria.fotosLiberadas == 5
+        marcarPassou(r)
+    }
+
     // ---------------------------------------------------------------------
     // Apoio
     // ---------------------------------------------------------------------
