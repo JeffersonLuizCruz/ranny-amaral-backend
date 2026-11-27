@@ -1,5 +1,6 @@
 package com.ranny.fotografia.contrato.api;
 
+import com.ranny.fotografia.contrato.model.SituacaoContrato;
 import com.ranny.fotografia.contrato.model.documento.StatusAceite;
 import com.ranny.fotografia.contrato.service.ContratoService;
 import com.ranny.fotografia.shared.api.PaginaResponse;
@@ -35,11 +36,13 @@ public class ContratoController {
     }
 
     @GetMapping
-    @Operation(summary = "Lista contratos de forma paginada por status, cliente, agendamento ou texto")
+    @Operation(summary = "Lista contratos de forma paginada por situação, status, cliente, agendamento ou texto")
     public PaginaResponse<ContratoResponse> listar(
             @RequestParam(required = false) StatusAceite statusAceite,
             @RequestParam(required = false) PagamentoStatus statusEntrada,
             @RequestParam(required = false) PagamentoStatus statusSaldoFinal,
+            @Parameter(description = "Fila operacional: aguardando_aceite, entrada_em_aberto ou comprovante_em_analise")
+            @RequestParam(required = false) SituacaoContrato situacao,
             @RequestParam(required = false) String clienteId,
             @RequestParam(required = false) String agendamentoId,
             @RequestParam(required = false) String q,
@@ -48,7 +51,7 @@ public class ContratoController {
             @Parameter(description = "Tamanho da pagina (1 a 100, default 20)")
             @RequestParam(required = false) Integer tamanho) {
         return contratoService.listar(statusAceite, statusEntrada, statusSaldoFinal,
-                clienteId, agendamentoId, q, pagina, tamanho);
+                situacao, clienteId, agendamentoId, q, pagina, tamanho);
     }
 
     @GetMapping("/{id}")

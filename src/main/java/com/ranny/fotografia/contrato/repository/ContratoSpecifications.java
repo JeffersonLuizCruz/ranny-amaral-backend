@@ -1,8 +1,12 @@
 package com.ranny.fotografia.contrato.repository;
 
 import com.ranny.fotografia.contrato.model.Contrato;
+import com.ranny.fotografia.contrato.model.SituacaoContrato;
 import com.ranny.fotografia.contrato.model.documento.StatusAceite;
 import com.ranny.fotografia.shared.model.PagamentoStatus;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
 import org.springframework.data.jpa.domain.Specification;
 
 /**
@@ -55,5 +59,48 @@ public final class ContratoSpecifications {
                 cb.like(cb.lower(root.get("numero")), like),
                 cb.like(cb.lower(root.get("clienteNome")), like),
                 cb.like(cb.lower(root.get("pacoteNome")), like));
+    }
+
+    /**
+     * Fila operacional do staff. As tres situacoes sao mutuamente exclusivas:
+     * um comprovante em analise tem prioridade sobre o aceite; contratos sem
+     * aceite nao entram na fila de entrada.
+     */
+    public static Specification<Contrato> daSituacao(SituacaoContrato situacao) {
+        if (situacao == null) {
+            return null;
+        }
+        return switch (situacao) {
+            case AGUARDANDO_ACEITE -> aguardandoAceite();
+            case ENTRADA_EM_ABERTO -> entradaEmAberto();
+            case COMPROVANTE_EM_ANALISE -> comprovanteEmAnalise();
+        };
+    }
+
+    public static Specification<Contrato> aguardandoAceite() {
+        return (root, query, cb) -> cb.and(
+                root.get("statusAceite").in(StatusAceite.PENDENTE, StatusAceite.EXPIRADO),
+                cb.not(comprovanteEmAnalisePredicate(root, cb)));
+    }
+
+    public static Specification<Contrato> entradaEmAberto() {
+        return (root, query, cb) -> cb.and(
+                cb.equal(root.get("statusAceite"), StatusAceite.ACEITO),
+                cb.equal(root.get("statusPagamento"), PagamentoStatus.PENDENTE),
+                cb.or(
+                        cb.isNull(root.get("pagamento").get("comprovante")),
+                        cb.isNotNull(root.get("pagamento").get("rejeicao"))));
+    }
+
+    public static Specification<Contrato> comprovanteEmAnalise() {
+        return (root, query, cb) -> comprovanteEmAnalisePredicate(root, cb);
+    }
+
+    private static Predicate comprovanteEmAnalisePredicate(Root<Contrato> root,
+                                                           CriteriaBuilder cb) {
+        return cb.and(
+                cb.equal(root.get("statusPagamento"), PagamentoStatus.PENDENTE),
+                cb.isNotNull(root.get("pagamento").get("comprovante")),
+                cb.isNull(root.get("pagamento").get("rejeicao")));
     }
 }

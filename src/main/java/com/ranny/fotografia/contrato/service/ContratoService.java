@@ -13,6 +13,7 @@ import com.ranny.fotografia.contrato.api.SolicitacaoAceiteResponse;
 import com.ranny.fotografia.contrato.model.Contrato;
 import com.ranny.fotografia.contrato.model.DadosContrato;
 import com.ranny.fotografia.contrato.model.ModeloContrato;
+import com.ranny.fotografia.contrato.model.SituacaoContrato;
 import com.ranny.fotografia.contrato.model.SolicitacaoAceite;
 import com.ranny.fotografia.contrato.model.documento.ContratoClausula;
 import com.ranny.fotografia.contrato.model.documento.ContratoSnapshot;
@@ -104,6 +105,7 @@ public class ContratoService implements ContratoConsulta {
     @Transactional(readOnly = true)
     public PaginaResponse<ContratoResponse> listar(StatusAceite status, PagamentoStatus statusEntrada,
                                                    PagamentoStatus statusSaldoFinal,
+                                                   SituacaoContrato situacao,
                                                    String clienteId, String agendamentoId, String busca,
                                                    Integer pagina, Integer tamanho) {
         Specification<Contrato> spec = (root, query, cb) -> cb.conjunction();
@@ -120,6 +122,10 @@ public class ContratoService implements ContratoConsulta {
         if (filtroSaldoFinal != null) {
             spec = spec.and(filtroSaldoFinal);
         }
+        Specification<Contrato> filtroSituacao = ContratoSpecifications.daSituacao(situacao);
+        if (filtroSituacao != null) {
+            spec = spec.and(filtroSituacao);
+        }
         Specification<Contrato> filtroCliente = ContratoSpecifications.doCliente(clienteId);
         if (filtroCliente != null) {
             spec = spec.and(filtroCliente);
@@ -132,7 +138,11 @@ public class ContratoService implements ContratoConsulta {
         if (filtroBusca != null) {
             spec = spec.and(filtroBusca);
         }
-        var pageable = Paginacao.de(pagina, tamanho, Sort.by(Sort.Direction.DESC, "dataEmissao"));
+        // Na fila de aprovacao o comprovante mais antigo deve aparecer primeiro.
+        Sort ordenacao = situacao == SituacaoContrato.COMPROVANTE_EM_ANALISE
+                ? Sort.by(Sort.Direction.ASC, "auditoria.atualizadoEm")
+                : Sort.by(Sort.Direction.DESC, "dataEmissao");
+        var pageable = Paginacao.de(pagina, tamanho, ordenacao);
         return PaginaResponse.de(contratoRepository.findAll(spec, pageable), ContratoResponse::de);
     }
 

@@ -2,6 +2,7 @@ package com.ranny.fotografia.contrato.api
 
 import com.ranny.fotografia.agenda.model.TaxaDeslocamento
 import com.ranny.fotografia.agenda.repository.AgendamentoRepository
+import com.ranny.fotografia.arquivo.storage.FakeObjectStorage
 import com.ranny.fotografia.cliente.model.Cliente
 import com.ranny.fotografia.cliente.repository.ClienteRepository
 import com.ranny.fotografia.contrato.model.ModeloContrato
@@ -64,6 +65,9 @@ class ContratoControllerSpec extends Specification {
 
     @Autowired
     AgendamentoRepository agendamentoRepository
+
+    @Autowired
+    FakeObjectStorage storage
 
     ModeloContrato modelo
     Cliente cliente
@@ -536,6 +540,112 @@ class ContratoControllerSpec extends Specification {
         pendentes.itens[0].id != recebido.id
     }
 
+    def "filtra fila de comprovante em analise"() {
+        given:
+        criarContrato()
+        def comComprovante = criarContrato()
+        def link = gerarLink(comComprovante.id)
+        enviarComprovante(link.token)
+
+        when:
+        def resultado = JsonCorpo.mapa(mockMvc.perform(get("/api/v1/contratos")
+                .param("situacao", "comprovante_em_analise")).andReturn())
+
+        then:
+        resultado.itens.size() == 1
+        resultado.itens[0].id == comComprovante.id
+        resultado.itens[0].pagamento.comprovante != null
+    }
+
+    def "filtra fila de entrada em aberto apenas para contratos ja aceitos"() {
+        given:
+        def aceitoSemComprovante = criarContrato()
+        aceitar(gerarLink(aceitoSemComprovante.id).token)
+
+        def aceitoComComprovante = criarContrato()
+        def linkComprovante = gerarLink(aceitoComComprovante.id)
+        aceitar(linkComprovante.token)
+        enviarComprovante(linkComprovante.token)
+
+        def rejeitado = criarContrato()
+        def linkRejeitado = gerarLink(rejeitado.id)
+        aceitar(linkRejeitado.token)
+        enviarComprovante(linkRejeitado.token)
+        mockMvc.perform(post("/api/v1/contratos/${rejeitado.id}/pagamento/rejeitar")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([motivo: "Comprovante ilegivel."])))
+                .andExpect(status().isOk())
+
+        def naoAceito = criarContrato()
+        gerarLink(naoAceito.id)
+
+        when:
+        def resultado = JsonCorpo.mapa(mockMvc.perform(get("/api/v1/contratos")
+                .param("situacao", "entrada_em_aberto")).andReturn())
+        def ids = resultado.itens.collect { it.id }
+
+        then:
+        resultado.itens.size() == 2
+        ids.contains(aceitoSemComprovante.id)
+        ids.contains(rejeitado.id)
+        !ids.contains(aceitoComComprovante.id)
+        !ids.contains(naoAceito.id)
+    }
+
+    def "filtra fila de aguardando aceite sem duplicar comprovante em analise"() {
+        given:
+        def rascunho = criarContrato()
+
+        def pendente = criarContrato()
+        gerarLink(pendente.id)
+
+        def expirado = criarContrato()
+        gerarLink(expirado.id)
+        def expiradoEntidade = contratoRepository.findById(expirado.id as String).get()
+        expiradoEntidade.expirar()
+        contratoRepository.saveAndFlush(expiradoEntidade)
+
+        def comComprovante = criarContrato()
+        def linkComprovante = gerarLink(comComprovante.id)
+        enviarComprovante(linkComprovante.token)
+
+        when:
+        def resultado = JsonCorpo.mapa(mockMvc.perform(get("/api/v1/contratos")
+                .param("situacao", "aguardando_aceite")).andReturn())
+        def ids = resultado.itens.collect { it.id }
+
+        then:
+        resultado.itens.size() == 2
+        ids.contains(pendente.id)
+        ids.contains(expirado.id)
+        !ids.contains(rascunho.id)
+        !ids.contains(comComprovante.id)
+    }
+
+    def "ordena comprovantes em analise do mais antigo para o mais recente"() {
+        given:
+        def maisAntigo = criarContrato()
+        enviarComprovante(gerarLink(maisAntigo.id).token)
+
+        def maisRecente = criarContrato()
+        enviarComprovante(gerarLink(maisRecente.id).token)
+
+        def entidadeAntiga = contratoRepository.findById(maisAntigo.id as String).get()
+        entidadeAntiga.auditoria.marcarAtualizacaoEm(Instant.now().minus(2, ChronoUnit.DAYS))
+        contratoRepository.saveAndFlush(entidadeAntiga)
+
+        def entidadeRecente = contratoRepository.findById(maisRecente.id as String).get()
+        entidadeRecente.auditoria.marcarAtualizacaoEm(Instant.now().minus(1, ChronoUnit.HOURS))
+        contratoRepository.saveAndFlush(entidadeRecente)
+
+        when:
+        def resultado = JsonCorpo.mapa(mockMvc.perform(get("/api/v1/contratos")
+                .param("situacao", "comprovante_em_analise")).andReturn())
+
+        then:
+        resultado.itens*.id == [maisAntigo.id, maisRecente.id]
+    }
+
     def "busca contratos por #campo"() {
         given:
         def contrato = criarContrato()
@@ -644,6 +754,45 @@ class ContratoControllerSpec extends Specification {
                 .content("{}"))
                 .andExpect(status().isOk())
                 .andReturn())
+    }
+
+    private Map aceitar(String token) {
+        return JsonCorpo.mapa(mockMvc.perform(post("/api/v1/public/contratos/${token}/aceite")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json(dadosAceite())))
+                .andExpect(status().isOk())
+                .andReturn())
+    }
+
+    private Map enviarComprovante(String token) {
+        storage.simular(2048, "application/pdf", "%PDF-1.7\nconteudo".bytes)
+        def inicio = JsonCorpo.mapa(mockMvc.perform(post("/api/v1/public/contratos/${token}/comprovante/upload")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([
+                        nomeArquivo   : "comprovante.pdf",
+                        mimeType      : "application/pdf",
+                        tamanho       : 2048,
+                        checksumSha256: "a" * 64
+                ])))
+                .andExpect(status().isOk())
+                .andReturn())
+
+        return JsonCorpo.mapa(mockMvc.perform(post("/api/v1/public/contratos/${token}/comprovante/upload/${inicio.arquivoId}/complete")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(JsonCorpo.json([partes: []])))
+                .andExpect(status().isOk())
+                .andReturn())
+    }
+
+    private static Map dadosAceite() {
+        return [
+                nomeCompleto     : "Marina Teste",
+                tipoDocumento    : "cpf",
+                documento        : "123.456.789-00",
+                cidade           : "Sao Paulo",
+                whatsapp         : "(11) 91234-5678",
+                autorizaUsoImagem: true
+        ]
     }
 
     private static boolean receiptsValidos(def recebido, def isento, def reaberto) {
